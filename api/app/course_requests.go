@@ -29,11 +29,15 @@ import (
 
 // CourseRequest is the request payload for course management.
 type CourseRequest struct {
-	Name               string    `json:"name" example:"Info 2"`
-	Description        string    `json:"description" example:"An example course."`
-	BeginsAt           time.Time `json:"begins_at" example:"auto"`
-	EndsAt             time.Time `json:"ends_at" example:"auto"`
-	RequiredPercentage int       `json:"required_percentage" example:"80"`
+	Name                     string    `json:"name" example:"Info 2"`
+	Description              string    `json:"description" example:"An example course."`
+	BeginsAt                 time.Time `json:"begins_at" example:"auto"`
+	EndsAt                   time.Time `json:"ends_at" example:"auto"`
+	RequiredPercentage       int       `json:"required_percentage" example:"80"`
+	TeamsEnabled             bool      `json:"teams_enabled"`
+	TeamFormationOpen        bool      `json:"team_formation_open"`
+	MaxTeamSize              int       `json:"max_team_size"`
+	EnforceSameExerciseGroup bool      `json:"enforce_same_exercise_group"`
 }
 
 // Bind preprocesses a CourseRequest.

@@ -241,6 +241,35 @@ func (f *FileHandle) Delete() error {
 	return os.Remove(f.Path())
 }
 
+// CopyTo copies or hardlinks the file represented by f to dst.
+func (f *FileHandle) CopyTo(dst *FileHandle) error {
+	srcPath := f.Path()
+	dstPath := dst.Path()
+	if !FileExists(srcPath) {
+		return os.ErrNotExist
+	}
+	_ = os.Remove(dstPath)
+	if err := os.Link(srcPath, dstPath); err == nil {
+		return nil
+	}
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	if _, err = io.Copy(out, src); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
 // GetContentType tries to predict the content type without reading the entire
 // file. There are some issues with this function as it cannot distinguish
 // between zip and octstream.

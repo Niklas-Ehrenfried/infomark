@@ -380,8 +380,20 @@ func (rs *TaskResource) GetSubmissionResultHandler(w http.ResponseWriter, r *htt
 	grade.PrivateTestStatus = -1
 	grade.PrivateTestLog = ""
 
+	resp := newGradeResponse(grade, course.ID)
+	resp.IsFinal = submission.IsFinal
+	resp.TeamID = submission.TeamID
+	resp.SubmittedByUserID = submission.SubmittedByUserID
+	resp.SubmissionUpdatedAt = submission.UpdatedAt
+	if submission.SubmittedByUserID.Valid {
+		subUser, err := rs.Stores.User.Get(submission.SubmittedByUserID.Int64)
+		if err == nil && subUser != nil {
+			resp.SubmittedByName = fmt.Sprintf("%s %s", subUser.FirstName, subUser.LastName)
+		}
+	}
+
 	// render JSON response
-	if err := render.Render(w, r, newGradeResponse(grade, course.ID)); err != nil {
+	if err := render.Render(w, r, resp); err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
 	}

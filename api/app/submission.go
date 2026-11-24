@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+	null "github.com/guregu/null/v6"
 	"github.com/infomark-org/infomark/api/helper"
 	"github.com/infomark-org/infomark/api/shared"
 	"github.com/infomark-org/infomark/auth/authenticate"
@@ -67,18 +68,38 @@ func (rs *SubmissionResource) GetFileHandler(w http.ResponseWriter, r *http.Requ
 	// submission := r.Context().Value(symbol.CtxKeySubmission).(*model.Submission)
 	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
 	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
 
 	submission, err := rs.Stores.Submission.GetByUserAndTask(accessClaims.LoginID, task.ID)
+	if err != nil && course != nil {
+		callerTeam, tErr := rs.Stores.Team.GetForUser(accessClaims.LoginID, course.ID)
+		if tErr == nil && callerTeam != nil {
+			teamSub, sErr := rs.Stores.Submission.GetForTeamAndTask(callerTeam.ID, task.ID)
+			if sErr == nil && teamSub != nil {
+				submission = teamSub
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		render.Render(w, r, ErrNotFound)
 		return
 	}
 
-	// students can only access their own files
+	// students can only access their own files or files of their team
 	if submission.UserID != accessClaims.LoginID {
 		if givenRole == authorize.STUDENT {
-			render.Render(w, r, ErrUnauthorized)
-			return
+			isTeammate := false
+			if submission.TeamID.Valid && course != nil {
+				callerTeam, err := rs.Stores.Team.GetForUser(accessClaims.LoginID, course.ID)
+				if err == nil && callerTeam != nil && callerTeam.ID == submission.TeamID.Int64 {
+					isTeammate = true
+				}
+			}
+			if !isTeammate {
+				_ = render.Render(w, r, ErrUnauthorized)
+				return
+			}
 		}
 	}
 
@@ -232,6 +253,7 @@ func (rs *SubmissionResource) GetFileByIDHandler(w http.ResponseWriter, r *http.
 	submission := r.Context().Value(symbol.CtxKeySubmission).(*model.Submission)
 	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
 	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
 
 	submission, err := rs.Stores.Submission.Get(submission.ID)
 	if err != nil {
@@ -239,11 +261,20 @@ func (rs *SubmissionResource) GetFileByIDHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// students can only access their own files
+	// students can only access their own files or files of their team
 	if submission.UserID != accessClaims.LoginID {
 		if givenRole == authorize.STUDENT {
-			render.Render(w, r, ErrUnauthorized)
-			return
+			isTeammate := false
+			if submission.TeamID.Valid && course != nil {
+				callerTeam, err := rs.Stores.Team.GetForUser(accessClaims.LoginID, course.ID)
+				if err == nil && callerTeam != nil && callerTeam.ID == submission.TeamID.Int64 {
+					isTeammate = true
+				}
+			}
+			if !isTeammate {
+				_ = render.Render(w, r, ErrUnauthorized)
+				return
+			}
 		}
 	}
 
@@ -282,12 +313,21 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 	course_role := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
 
 	if course_role == authorize.STUDENT && !PublicYet(sheet.PublishAt) {
-		render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("sheet not published yet")))
+		_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("sheet not published yet")))
 		return
 	}
 
 	if course_role == authorize.STUDENT && OverTime(sheet.DueAt) {
-		render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("too late deadline was %v but now it is %v", sheet.DueAt, NowUTC())))
+		_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("too late deadline was %v but now it is %v", sheet.DueAt, NowUTC())))
+		return
+	}
+
+	// Enforce configured submission size limit before ParseMultipartForm buffers the request body.
+	if maxBytes := configuration.Configuration.Server.HTTP.Limits.MaxSubmission; maxBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		_ = render.Render(w, r, ErrBadRequestWithDetails(err))
 		return
 	}
 
@@ -298,7 +338,8 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 		usedUserID = int64(requested_user_id)
 	}
 
-	var grade *model.Grade
+	isFinal := r.FormValue("is_final") == "true" || r.FormValue("is_final") == "1"
+	forceOverwrite := r.FormValue("force_overwrite") == "true" || r.FormValue("force_overwrite") == "1"
 
 	defaultPublicTestLog := "submission received and will be tested"
 	if !task.PublicDockerImage.Valid || !helper.NewPublicTestFileHandle(task.ID).Exists() {
@@ -312,78 +353,87 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 		defaultPrivateTestLog = "no unit tests for this task are available"
 	}
 
-	// create submission if not exists
-	submission, err := rs.Stores.Submission.GetByUserAndTask(usedUserID, task.ID)
-	if err != nil {
-		// no such submission
-		submission, err = rs.Stores.Submission.Create(&model.Submission{UserID: usedUserID, TaskID: task.ID})
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
-			return
+	isTeamSheet := course.TeamsEnabled && sheet.AllowTeams
+
+	var userTeam *model.Team
+	targetUserIDs := []int64{usedUserID}
+	var teamID null.Int
+
+	if isTeamSheet {
+		var err error
+		userTeam, err = rs.Stores.Team.GetForUser(usedUserID, course.ID)
+		if err != nil || userTeam == nil {
+			_ = rs.Stores.Team.EnsureSoloTeams(course.ID)
+			userTeam, _ = rs.Stores.Team.GetForUser(usedUserID, course.ID)
 		}
 
-		// create also empty grade, which will be filled in later
-		grade = &model.Grade{
-			PublicExecutionState:  0,
-			PrivateExecutionState: 0,
-			PublicTestLog:         defaultPublicTestLog,
-			PrivateTestLog:        defaultPrivateTestLog,
-			PublicTestStatus:      0,
-			PrivateTestStatus:     0,
-			AcquiredPoints:        0,
-			Feedback:              "",
-			TutorID:               1,
-			SubmissionID:          submission.ID,
-		}
+		if userTeam != nil {
+			teamID = null.IntFrom(userTeam.ID)
+			members, err := rs.Stores.Team.GetMembers(userTeam.ID)
+			if err == nil && len(members) > 0 {
+				targetUserIDs = make([]int64, len(members))
+				for i, m := range members {
+					targetUserIDs[i] = m.UserID
+				}
+			}
 
-		// fetch id from grade as we need it
-		grade, err = rs.Stores.Grade.Create(grade)
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
-			return
+			// Overwrite guard: check if any existing submission for this team and task is final
+			existingSubs, err := rs.Stores.Submission.GetSubmissionsForTeamAndTask(userTeam.ID, task.ID)
+			if err == nil {
+				for _, es := range existingSubs {
+					if es.IsFinal && !forceOverwrite {
+						_ = render.Render(w, r, ErrConflictWithDetails(CodeFinalSubmissionExists, "FINAL_SUBMISSION_EXISTS"))
+						return
+					}
+				}
+			}
 		}
-
 	} else {
-		// submission exists, we only need to get the grade
-		grade, err = rs.Stores.Grade.GetForSubmission(submission.ID)
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		// Non-team sheet: check if existing submission for this user is final
+		existingSub, err := rs.Stores.Submission.GetByUserAndTask(usedUserID, task.ID)
+		if err == nil && existingSub.IsFinal && !forceOverwrite {
+			_ = render.Render(w, r, ErrConflictWithDetails(CodeFinalSubmissionExists, "FINAL_SUBMISSION_EXISTS"))
 			return
 		}
-
-		// and update the grade
-		grade.PublicExecutionState = 0
-		grade.PrivateExecutionState = 0
-		grade.PublicTestLog = defaultPublicTestLog
-		grade.PrivateTestLog = defaultPrivateTestLog
-
-		err = rs.Stores.Grade.Update(grade)
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
-			return
-		}
-
 	}
 
-	// the file will be located
-	if _, err := helper.NewSubmissionFileHandle(submission.ID).WriteToDisk(r, "file_data"); err != nil {
-		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
-		return
-	}
-
-	sha256, err := helper.NewSubmissionFileHandle(submission.ID).Sha256()
+	uploaderSubmission, uploaderGrade, otherSubmissionIDs, err := rs.Stores.Submission.PrepareUploadSubmissions(
+		course.ID, task.ID, usedUserID, targetUserIDs, teamID, isFinal, defaultPublicTestLog, defaultPrivateTestLog,
+	)
 	if err != nil {
-		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
+	}
+
+	if uploaderSubmission == nil {
+		_ = render.Render(w, r, ErrNotFound)
+		return
+	}
+
+	uploaderFH := helper.NewSubmissionFileHandle(uploaderSubmission.ID)
+	if _, err := uploaderFH.WriteToDisk(r, "file_data"); err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	sha256, err := uploaderFH.Sha256()
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	// Copy/link file for teammates
+	for _, otherSubID := range otherSubmissionIDs {
+		otherFH := helper.NewSubmissionFileHandle(otherSubID)
+		if err := uploaderFH.CopyTo(otherFH); err != nil {
+			_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+			return
+		}
 	}
 
 	// enqueue file into testing queue
 	// By definition user with id 1 is the system itself with root access
 	tokenManager := rs.TokenAuth
-	if err != nil {
-		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
-		return
-	}
 	accessToken, err := tokenManager.CreateAccessJWT(
 		authenticate.NewAccessClaims(1, true))
 	if err != nil {
@@ -393,9 +443,8 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 
 	if task.PublicDockerImage.Valid && helper.NewPublicTestFileHandle(task.ID).Exists() {
 		// enqueue public test
-
 		request := shared.NewSubmissionAMQPWorkerRequest(
-			course.ID, task.ID, submission.ID, grade.ID,
+			course.ID, task.ID, uploaderSubmission.ID, uploaderGrade.ID,
 			accessToken, configuration.Configuration.Server.ExternalURL(), task.PublicDockerImage.String, sha256, "public")
 
 		body, err := json.Marshal(request)
@@ -410,19 +459,17 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 			return
 		}
 	} else {
-		grade.PublicTestLog = "No public dockerimage was specified --> will not run any public test"
-		err = rs.Stores.Grade.Update(grade)
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		uploaderGrade.PublicTestLog = "No public dockerimage was specified --> will not run any public test"
+		if err := rs.Stores.Grade.Update(uploaderGrade); err != nil {
+			_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 			return
 		}
 	}
 
 	if task.PrivateDockerImage.Valid && helper.NewPrivateTestFileHandle(task.ID).Exists() {
 		// enqueue private test
-
 		request := shared.NewSubmissionAMQPWorkerRequest(
-			course.ID, task.ID, submission.ID, grade.ID,
+			course.ID, task.ID, uploaderSubmission.ID, uploaderGrade.ID,
 			accessToken, configuration.Configuration.Server.ExternalURL(), task.PrivateDockerImage.String, sha256, "private")
 
 		body, err := json.Marshal(request)
@@ -437,10 +484,9 @@ func (rs *SubmissionResource) UploadFileHandler(w http.ResponseWriter, r *http.R
 			return
 		}
 	} else {
-		grade.PrivateTestLog = "No private dockerimage was specified --> will not run any private test"
-		err = rs.Stores.Grade.Update(grade)
-		if err != nil {
-			render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		uploaderGrade.PrivateTestLog = "No private dockerimage was specified --> will not run any private test"
+		if err := rs.Stores.Grade.Update(uploaderGrade); err != nil {
+			_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 			return
 		}
 	}

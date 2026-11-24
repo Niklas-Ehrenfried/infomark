@@ -214,6 +214,19 @@ func (s *GroupStore) ChangeGroupEnrollmentOfUserInCourse(p *model.GroupEnrollmen
 	return Update(s.db, "user_group", p.ID, p)
 }
 
+func (s *GroupStore) AssignStudentToGroup(userID, groupID, courseID int64) error {
+	existing, err := s.GetGroupEnrollmentOfUserInCourse(userID, courseID)
+	if err == nil && existing != nil {
+		existing.GroupID = groupID
+		return s.ChangeGroupEnrollmentOfUserInCourse(existing)
+	}
+	_, err = s.CreateGroupEnrollmentOfUserInCourse(&model.GroupEnrollment{
+		UserID:  userID,
+		GroupID: groupID,
+	})
+	return err
+}
+
 func (s *GroupStore) GetOfTutor(tutorID int64, courseID int64) ([]model.GroupWithTutor, error) {
 	p := []model.GroupWithTutor{}
 

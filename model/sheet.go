@@ -30,9 +30,10 @@ type Sheet struct {
 	CreatedAt time.Time `db:"created_at,omitempty"`
 	UpdatedAt time.Time `db:"updated_at,omitempty"`
 
-	Name      string    `db:"name"`
-	PublishAt time.Time `db:"publish_at"`
-	DueAt     time.Time `db:"due_at"`
+	Name       string    `db:"name"`
+	PublishAt  time.Time `db:"publish_at"`
+	DueAt      time.Time `db:"due_at"`
+	AllowTeams bool      `db:"allow_teams"`
 }
 
 // SheetPoints contains the performance of a specific student

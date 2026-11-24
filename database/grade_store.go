@@ -20,10 +20,29 @@
 package database
 
 import (
+	"database/sql"
+	"fmt"
+
 	"github.com/infomark-org/infomark/model"
 	"github.com/infomark-org/infomark/symbol"
 	"github.com/jmoiron/sqlx"
 )
+
+type TeammateGrade struct {
+	GradeID              int64  `db:"grade_id"`
+	UserID               int64  `db:"user_id"`
+	FirstName            string `db:"first_name"`
+	LastName             string `db:"last_name"`
+	AcquiredPoints       int    `db:"acquired_points"`
+	Feedback             string `db:"feedback"`
+	IsIndividualOverride bool   `db:"is_individual_override"`
+}
+
+type MemberGradeOverride struct {
+	UserID         int64
+	AcquiredPoints int
+	Feedback       string
+}
 
 type GradeStore struct {
 	db *sqlx.DB
@@ -75,9 +94,15 @@ SET
   private_execution_state=$4,
   private_test_log=$2,
   private_test_status=$3
-WHERE
-  id = $1
-    `, gradeID, log, status, symbol.TestingStateFinished)
+WHERE id IN (
+  SELECT g2.id
+  FROM grades g1
+  INNER JOIN submissions s1 ON g1.submission_id = s1.id
+  INNER JOIN submissions s2 ON s1.team_id IS NOT NULL AND s2.team_id = s1.team_id AND s2.task_id = s1.task_id
+  INNER JOIN grades g2 ON g2.submission_id = s2.id
+  WHERE g1.id = $1
+) OR id = $1;
+`, gradeID, log, status, symbol.TestingStateFinished)
 	return err
 }
 
@@ -88,10 +113,123 @@ SET
   public_execution_state=$4,
   public_test_log=$2,
   public_test_status=$3
-WHERE
-  id = $1
-    `, gradeID, log, status, symbol.TestingStateFinished)
+WHERE id IN (
+  SELECT g2.id
+  FROM grades g1
+  INNER JOIN submissions s1 ON g1.submission_id = s1.id
+  INNER JOIN submissions s2 ON s1.team_id IS NOT NULL AND s2.team_id = s1.team_id AND s2.task_id = s1.task_id
+  INNER JOIN grades g2 ON g2.submission_id = s2.id
+  WHERE g1.id = $1
+) OR id = $1;
+`, gradeID, log, status, symbol.TestingStateFinished)
 	return err
+}
+
+func (s *GradeStore) GetTeammateGrades(gradeID int64) ([]TeammateGrade, error) {
+	var results []TeammateGrade
+	err := s.db.Select(&results, `
+SELECT
+  g2.id AS grade_id,
+  u.id AS user_id,
+  u.first_name,
+  u.last_name,
+  g2.acquired_points,
+  g2.feedback,
+  g2.is_individual_override
+FROM grades g1
+INNER JOIN submissions s1 ON g1.submission_id = s1.id
+INNER JOIN submissions s2 ON s1.team_id IS NOT NULL AND s2.team_id = s1.team_id AND s2.task_id = s1.task_id
+INNER JOIN grades g2 ON g2.submission_id = s2.id
+INNER JOIN users u ON s2.user_id = u.id
+WHERE g1.id = $1
+ORDER BY u.last_name ASC;`, gradeID)
+	return results, err
+}
+
+func (s *GradeStore) UpdateWithOverrides(gradeID int64, basePoints int, baseFeedback string, tutorID int64, overrides map[int64]MemberGradeOverride, clearOverrideUserIDs []int64) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	type SubInfo struct {
+		SubmissionID int64         `db:"submission_id"`
+		TeamID       sql.NullInt64 `db:"team_id"`
+		TaskID       int64         `db:"task_id"`
+	}
+	var sub SubInfo
+	err = tx.Get(&sub, `
+SELECT s.id AS submission_id, s.team_id, s.task_id
+FROM grades g
+INNER JOIN submissions s ON g.submission_id = s.id
+WHERE g.id = $1 LIMIT 1;`, gradeID)
+	if err != nil {
+		return err
+	}
+
+	if !sub.TeamID.Valid {
+		_, err = tx.Exec(`
+UPDATE grades
+SET acquired_points = $1, feedback = $2, tutor_id = $3, is_individual_override = false, updated_at = NOW()
+WHERE id = $4;`, basePoints, baseFeedback, tutorID, gradeID)
+		if err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+
+	type MemberGradeRow struct {
+		GradeID              int64 `db:"grade_id"`
+		UserID               int64 `db:"user_id"`
+		IsIndividualOverride bool  `db:"is_individual_override"`
+	}
+	var rows []MemberGradeRow
+	err = tx.Select(&rows, `
+SELECT g.id AS grade_id, s.user_id, g.is_individual_override
+FROM submissions s
+INNER JOIN grades g ON g.submission_id = s.id
+WHERE s.team_id = $1 AND s.task_id = $2;`, sub.TeamID.Int64, sub.TaskID)
+	if err != nil {
+		return err
+	}
+
+	clearSet := make(map[int64]bool)
+	for _, uid := range clearOverrideUserIDs {
+		clearSet[uid] = true
+	}
+
+	for _, row := range rows {
+		if ovr, hasOvr := overrides[row.UserID]; hasOvr {
+			_, err = tx.Exec(`
+UPDATE grades
+SET acquired_points = $1, feedback = $2, tutor_id = $3, is_individual_override = true, updated_at = NOW()
+WHERE id = $4;`, ovr.AcquiredPoints, ovr.Feedback, tutorID, row.GradeID)
+			if err != nil {
+				return err
+			}
+		} else if clearSet[row.UserID] {
+			_, err = tx.Exec(`
+UPDATE grades
+SET acquired_points = $1, feedback = $2, tutor_id = $3, is_individual_override = false, updated_at = NOW()
+WHERE id = $4;`, basePoints, baseFeedback, tutorID, row.GradeID)
+			if err != nil {
+				return err
+			}
+		} else if row.IsIndividualOverride {
+			continue
+		} else {
+			_, err = tx.Exec(`
+UPDATE grades
+SET acquired_points = $1, feedback = $2, tutor_id = $3, is_individual_override = false, updated_at = NOW()
+WHERE id = $4;`, basePoints, baseFeedback, tutorID, row.GradeID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *GradeStore) GetForSubmission(id int64) (*model.Grade, error) {
@@ -145,14 +283,21 @@ ORDER BY
 func (s *GradeStore) GetAllMissingGrades(courseID int64, tutorID int64, groupID int64) ([]model.MissingGrade, error) {
 	p := []model.MissingGrade{}
 
-	err := s.db.Select(&p,
-		`
+	args := []interface{}{courseID}
+	query := `
+WITH ranked_teams AS (
+  SELECT id, DENSE_RANK() OVER (ORDER BY id ASC) AS team_number
+  FROM teams
+  WHERE course_id = $1
+)
 SELECT
   g.*,
   ts.task_id,
   ts.sheet_id,
   sg.course_id,
   s.user_id,
+  s.team_id,
+  rt.team_number,
   u.last_name user_last_name,
   u.first_name user_first_name,
   u.email user_email
@@ -162,14 +307,26 @@ INNER JOIN submissions s ON s.id = g.submission_id
 INNER JOIN task_sheet ts ON ts.task_id = s.task_id
 INNER JOIN sheet_course sg ON sg.sheet_id = ts.sheet_id
 INNER JOIN users u ON s.user_id = u.id
-INNER JOIN user_group ug ON ug.user_id = u.id
+LEFT JOIN ranked_teams rt ON rt.id = s.team_id
+LEFT JOIN user_group ug ON ug.user_id = u.id AND ug.group_id IN (SELECT id FROM groups WHERE course_id = $1)
 WHERE
-  g.feedback like '' and g.tutor_id = $1
-AND
-  sg.course_id = $2
-AND
-  ($3 = 0 OR ug.group_id = $3)
-  `, tutorID, courseID, groupID)
+  g.feedback like ''
+  AND g.acquired_points = 0
+  AND sg.course_id = $1
+`
+	argIdx := 2
+	if tutorID > 0 {
+		query += fmt.Sprintf(` AND g.tutor_id = $%d`, argIdx)
+		args = append(args, tutorID)
+		argIdx++
+	}
+	if groupID > 0 {
+		query += fmt.Sprintf(` AND ug.group_id = $%d`, argIdx)
+		args = append(args, groupID)
+	}
+	query += ` ORDER BY g.updated_at DESC;`
+
+	err := s.db.Select(&p, query, args...)
 	return p, err
 }
 

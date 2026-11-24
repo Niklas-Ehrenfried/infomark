@@ -239,6 +239,7 @@ type StatementData struct {
 func (d *DatabaseSyntax) PackStatementData(src interface{}) ([]StatementData, error) {
 
 	var null_string null.String
+	var null_int null.Int
 
 	statementDatas := []StatementData{}
 
@@ -281,6 +282,19 @@ func (d *DatabaseSyntax) PackStatementData(src interface{}) ([]StatementData, er
 					statementDatas = append(statementDatas, StatementData{
 						Column: name,
 						Value:  current_value.Field(0).Field(0).String(),
+					})
+
+				} else {
+					statementDatas = append(statementDatas, StatementData{
+						Column: name,
+						Value:  nil,
+					})
+				}
+			} else if reflect.TypeOf(null_int) == current_value.Type() {
+				if current_value.Field(0).Field(1).Bool() {
+					statementDatas = append(statementDatas, StatementData{
+						Column: name,
+						Value:  current_value.Field(0).Field(0).Int(),
 					})
 
 				} else {

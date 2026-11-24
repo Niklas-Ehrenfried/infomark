@@ -104,10 +104,16 @@ func (rs *SheetResource) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowTeams := true
+	if data.AllowTeams != nil {
+		allowTeams = *data.AllowTeams
+	}
+
 	sheet := &model.Sheet{
-		Name:      data.Name,
-		PublishAt: data.PublishAt,
-		DueAt:     data.DueAt,
+		Name:       data.Name,
+		PublishAt:  data.PublishAt,
+		DueAt:      data.DueAt,
+		AllowTeams: allowTeams,
 	}
 
 	// create Sheet entry in database
@@ -178,6 +184,9 @@ func (rs *SheetResource) EditHandler(w http.ResponseWriter, r *http.Request) {
 	sheet.Name = data.Name
 	sheet.PublishAt = data.PublishAt
 	sheet.DueAt = data.DueAt
+	if data.AllowTeams != nil {
+		sheet.AllowTeams = *data.AllowTeams
+	}
 
 	// update database entry
 	if err := rs.Stores.Sheet.Update(sheet); err != nil {

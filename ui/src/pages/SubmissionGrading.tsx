@@ -1,11 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, InputNumber, Input, Button, Descriptions, Tag, Spin, Divider, message } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import {
+  Card,
+  Form,
+  InputNumber,
+  Input,
+  Button,
+  Descriptions,
+  Tag,
+  Spin,
+  Divider,
+  message,
+  Checkbox,
+  Flex,
+  Space,
+  Typography,
+} from 'antd';
+import { DownloadOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import agent from '@/api/agent';
-import type { Grade } from '@/types';
+import type { Grade, GradeOverrideItem } from '@/types';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
+
+const { Paragraph } = Typography;
+
+interface MemberOverrideState {
+  enabled: boolean;
+  points: number;
+  feedback: string;
+}
 
 // SubmissionGrading lets a tutor review a single graded submission and record
 // points + feedback.
@@ -25,6 +48,7 @@ const SubmissionGrading: React.FC = () => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
   const [grade, setGrade] = useState<Grade | null>(null);
+  const [memberOverrides, setMemberOverrides] = useState<Record<number, MemberOverrideState>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -44,6 +68,18 @@ const SubmissionGrading: React.FC = () => {
         acquired_points: gradeData.acquired_points,
         feedback: gradeData.feedback,
       });
+
+      const initialOverrides: Record<number, MemberOverrideState> = {};
+      if (gradeData.teammate_grades) {
+        for (const tm of gradeData.teammate_grades) {
+          initialOverrides[tm.user_id] = {
+            enabled: tm.is_individual_override,
+            points: tm.acquired_points,
+            feedback: tm.feedback,
+          };
+        }
+      }
+      setMemberOverrides(initialOverrides);
     } catch (error) {
       message.error(t('grades.loadFailed'));
     } finally {
@@ -55,9 +91,30 @@ const SubmissionGrading: React.FC = () => {
     if (!grade) return;
     setSaving(true);
     try {
+      const overrides: GradeOverrideItem[] = [];
+      const clearOverrideUserIDs: number[] = [];
+
+      if (grade.teammate_grades) {
+        for (const tm of grade.teammate_grades) {
+          const state = memberOverrides[tm.user_id];
+          if (state?.enabled) {
+            overrides.push({
+              user_id: tm.user_id,
+              acquired_points: state.points,
+              feedback: state.feedback,
+            });
+          } else if (tm.is_individual_override) {
+            clearOverrideUserIDs.push(tm.user_id);
+          }
+        }
+      }
+
       await agent.Grades.update(parseInt(courseId!), grade.id, {
         acquired_points: values.acquired_points,
         feedback: values.feedback,
+        overrides: overrides.length > 0 ? overrides : undefined,
+        clear_override_user_ids:
+          clearOverrideUserIDs.length > 0 ? clearOverrideUserIDs : undefined,
       });
       message.success(t('grades.gradeSaved'));
       navigate(-1);
@@ -112,6 +169,13 @@ const SubmissionGrading: React.FC = () => {
     >
       <Descriptions column={1} bordered style={{ marginBottom: 24 }}>
         <Descriptions.Item label={t('grades.student')}>{studentName}</Descriptions.Item>
+        {grade.team_id && (
+          <Descriptions.Item label={t('team.myTeam')}>
+            <Tag color="cyan">
+              <TeamOutlined /> {t('team.teamNumber', { num: grade.team_number ?? `#${grade.team_id}` })}
+            </Tag>
+          </Descriptions.Item>
+        )}
         {grade.user?.email && (
           <Descriptions.Item label={t('profile.email')}>{grade.user.email}</Descriptions.Item>
         )}
@@ -165,6 +229,102 @@ const SubmissionGrading: React.FC = () => {
         >
           <Input.TextArea rows={6} />
         </Form.Item>
+
+        {grade.teammate_grades && grade.teammate_grades.length > 1 && (
+          <>
+            <Divider orientation="left">
+              <Space>
+                <TeamOutlined />
+                <span>{t('grades.teammateOverrides')}</span>
+              </Space>
+            </Divider>
+            <Paragraph type="secondary">{t('grades.teammateOverridesHelp')}</Paragraph>
+            <Space direction="vertical" style={{ width: '100%', marginBottom: 24 }} size="middle">
+              {grade.teammate_grades.map((tm) => {
+                const isOverride = memberOverrides[tm.user_id]?.enabled ?? false;
+                return (
+                  <Card
+                    key={tm.user_id}
+                    size="small"
+                    title={
+                      <Flex justify="space-between" align="center" wrap="wrap" gap="small">
+                        <Space>
+                          <UserOutlined />
+                          <span>
+                            {tm.first_name} {tm.last_name}
+                          </span>
+                          {isOverride ? (
+                            <Tag color="purple">{t('grades.individualOverride')}</Tag>
+                          ) : (
+                            <Tag color="default">{t('grades.inheritsTeam')}</Tag>
+                          )}
+                        </Space>
+                        <Checkbox
+                          checked={isOverride}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setMemberOverrides((prev) => ({
+                              ...prev,
+                              [tm.user_id]: {
+                                enabled: checked,
+                                points:
+                                  prev[tm.user_id]?.points ??
+                                  form.getFieldValue('acquired_points') ??
+                                  0,
+                                feedback:
+                                  prev[tm.user_id]?.feedback ??
+                                  form.getFieldValue('feedback') ??
+                                  '',
+                              },
+                            }));
+                          }}
+                        >
+                          {t('grades.enableOverride')}
+                        </Checkbox>
+                      </Flex>
+                    }
+                  >
+                    {isOverride && (
+                      <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                            {t('grades.overridePoints')}
+                          </label>
+                          <InputNumber
+                            min={0}
+                            value={memberOverrides[tm.user_id]?.points}
+                            onChange={(val) =>
+                              setMemberOverrides((prev) => ({
+                                ...prev,
+                                [tm.user_id]: { ...prev[tm.user_id], points: val ?? 0 },
+                              }))
+                            }
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                            {t('grades.overrideFeedback')}
+                          </label>
+                          <Input.TextArea
+                            rows={3}
+                            value={memberOverrides[tm.user_id]?.feedback}
+                            onChange={(e) =>
+                              setMemberOverrides((prev) => ({
+                                ...prev,
+                                [tm.user_id]: { ...prev[tm.user_id], feedback: e.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+                      </Space>
+                    )}
+                  </Card>
+                );
+              })}
+            </Space>
+          </>
+        )}
 
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>

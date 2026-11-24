@@ -375,9 +375,24 @@ func New(db *sqlx.DB, promhttp http.Handler, log bool) (*chi.Mux, error) {
 								})
 							})
 
+							r.Route("/team", func(r chi.Router) {
+								r.Get("/", appAPI.Team.GetTeamHandler)
+								r.Post("/token", appAPI.Team.GenerateTokenHandler)
+								r.Post("/join", appAPI.Team.JoinTeamHandler)
+							})
+
+							r.Route("/teams", func(r chi.Router) {
+								r.Use(authorize.RequiresAtLeastCourseRole(authorize.TUTOR))
+								r.Get("/", appAPI.Team.ListRosterHandler)
+								r.Post("/move", appAPI.Team.MoveMemberHandler)
+								r.Post("/split", appAPI.Team.SplitMemberHandler)
+								r.Post("/", appAPI.Team.CreateCustomTeamHandler)
+							})
+
 							r.Route("/grades", func(r chi.Router) {
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/", appAPI.Grade.IndexHandler)
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/summary", appAPI.Grade.IndexSummaryHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Get("/summary.csv", appAPI.Grade.SummaryCSVHandler)
 								r.Get("/missing", appAPI.Grade.IndexMissingHandler)
 
 								r.Route("/{grade_id}", func(r chi.Router) {

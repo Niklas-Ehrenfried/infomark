@@ -21,6 +21,7 @@ package app
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,9 +29,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+	null "github.com/guregu/null/v6"
 	"github.com/infomark-org/infomark/api/helper"
 	"github.com/infomark-org/infomark/auth/authenticate"
 	"github.com/infomark-org/infomark/auth/authorize"
+	"github.com/infomark-org/infomark/database"
 	"github.com/infomark-org/infomark/model"
 	"github.com/infomark-org/infomark/symbol"
 )
@@ -81,13 +84,27 @@ func (rs *GradeResource) EditHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentGrade.Feedback = data.Feedback
-	currentGrade.AcquiredPoints = data.AcquiredPoints
+	for _, ovr := range data.Overrides {
+		if ovr.AcquiredPoints < 0 {
+			_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("override acquired points cannot be negative (%v)", ovr.AcquiredPoints)))
+			return
+		}
+		if ovr.AcquiredPoints > task.MaxPoints {
+			_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("override acquired points is larger than max-points %v is more than %v", ovr.AcquiredPoints, task.MaxPoints)))
+			return
+		}
+	}
 
-	currentGrade.TutorID = accessClaims.LoginID
+	ovrMap := make(map[int64]database.MemberGradeOverride)
+	for _, ovr := range data.Overrides {
+		ovrMap[ovr.UserID] = database.MemberGradeOverride{
+			UserID:         ovr.UserID,
+			AcquiredPoints: ovr.AcquiredPoints,
+			Feedback:       ovr.Feedback,
+		}
+	}
 
-	// update database entry
-	if err := rs.Stores.Grade.Update(currentGrade); err != nil {
+	if err := rs.Stores.Grade.UpdateWithOverrides(currentGrade.ID, data.AcquiredPoints, data.Feedback, accessClaims.LoginID, ovrMap, data.ClearOverrideUserIDs); err != nil {
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
 	}
@@ -110,13 +127,36 @@ func (rs *GradeResource) GetByIDHandler(w http.ResponseWriter, r *http.Request) 
 	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
 	currentGrade := r.Context().Value(symbol.CtxKeyGrade).(*model.Grade)
 
+	resp := newGradeResponse(currentGrade, course.ID)
+	if sub, err := rs.Stores.Submission.Get(currentGrade.SubmissionID); err == nil {
+		resp.TeamID = sub.TeamID
+		if sub.TeamID.Valid && rs.Stores.Team != nil {
+			num := rs.Stores.Team.GetTeamNumber(sub.TeamID.Int64, course.ID)
+			resp.TeamNumber = null.IntFrom(num)
+		}
+	}
+
+	teammates, err := rs.Stores.Grade.GetTeammateGrades(currentGrade.ID)
+	if err == nil && len(teammates) > 0 {
+		resp.TeammateGrades = make([]TeammateGradeView, len(teammates))
+		for i, tm := range teammates {
+			resp.TeammateGrades[i] = TeammateGradeView{
+				GradeID:              tm.GradeID,
+				UserID:               tm.UserID,
+				FirstName:            tm.FirstName,
+				LastName:             tm.LastName,
+				AcquiredPoints:       tm.AcquiredPoints,
+				Feedback:             tm.Feedback,
+				IsIndividualOverride: tm.IsIndividualOverride,
+			}
+		}
+	}
+
 	// return Material information of created entry
-	if err := render.Render(w, r, newGradeResponse(currentGrade, course.ID)); err != nil {
+	if err := render.Render(w, r, resp); err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
 	}
-
-	render.Status(r, http.StatusNoContent)
 }
 
 // PublicResultEditHandler is public endpoint for
@@ -398,23 +438,117 @@ func (rs *GradeResource) IndexSummaryHandler(w http.ResponseWriter, r *http.Requ
 func (rs *GradeResource) IndexMissingHandler(w http.ResponseWriter, r *http.Request) {
 	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
 	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
 
 	filterGroupID := helper.Int64FromURL(r, "group_id", 0)
 
-	grades, err := rs.Stores.Grade.GetAllMissingGrades(course.ID, accessClaims.LoginID, filterGroupID)
+	tutorID := accessClaims.LoginID
+	if givenRole == authorize.ADMIN {
+		tutorID = 0
+	}
+
+	grades, err := rs.Stores.Grade.GetAllMissingGrades(course.ID, tutorID, filterGroupID)
 	if err != nil {
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
 	}
 
+	// Collapse duplicate team entries so tutors view exactly 1 row per team per task
+	seenTeamTask := make(map[string]bool)
+	var collapsedGrades []model.MissingGrade
+	for _, g := range grades {
+		if g.TeamID.Valid {
+			key := fmt.Sprintf("%d-%d", g.TeamID.Int64, g.TaskID)
+			if seenTeamTask[key] {
+				continue
+			}
+			seenTeamTask[key] = true
+		}
+		collapsedGrades = append(collapsedGrades, g)
+	}
+
 	// render JSON response
-	if err = render.RenderList(w, r, newMissingGradeListResponse(grades)); err != nil {
+	if err = render.RenderList(w, r, newMissingGradeListResponse(collapsedGrades)); err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
 	}
 
 	render.Status(r, http.StatusOK)
+}
 
+// sanitizeCSVCell guards against CSV/spreadsheet formula injection (OWASP).
+func sanitizeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	default:
+		return s
+	}
+}
+
+// SummaryCSVHandler exports grade overview as CSV
+// URL: /courses/{course_id}/grades/summary.csv
+// URLPARAM: course_id,integer
+// QUERYPARAM: group_id,integer
+// METHOD: get
+// TAG: grades
+// RESPONSE: 200,CSVFile
+// RESPONSE: 400,BadRequest
+// RESPONSE: 401,Unauthenticated
+// RESPONSE: 403,Unauthorized
+// SUMMARY:  Export grades summary as CSV file
+func (rs *GradeResource) SummaryCSVHandler(w http.ResponseWriter, r *http.Request) {
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	filterGroupID := helper.Int64FromURL(r, "group_id", 0)
+	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+
+	grades, err := rs.Stores.Grade.GetOverviewGrades(course.ID, filterGroupID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	sheets, err := rs.Stores.Sheet.SheetsOfCourse(course.ID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	overview := newGradeOverviewResponse(grades, sheets, givenRole)
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"grades-course-%d.csv\"", course.ID))
+
+	csvWriter := csv.NewWriter(w)
+
+	// Header: Matriculation Number, First Name, Last Name, Email, Sheet 1, Sheet 2, ..., Total
+	header := []string{"Matriculation Number", "First Name", "Last Name", "Email"}
+	for _, s := range overview.Sheets {
+		header = append(header, sanitizeCSVCell(s.Name))
+	}
+	header = append(header, "Total")
+	_ = csvWriter.Write(header)
+
+	for _, ach := range overview.Achievements {
+		row := []string{
+			sanitizeCSVCell(ach.User.StudentNumber),
+			sanitizeCSVCell(ach.User.FirstName),
+			sanitizeCSVCell(ach.User.LastName),
+			sanitizeCSVCell(ach.User.Email),
+		}
+		total := 0
+		for _, p := range ach.Points {
+			row = append(row, strconv.Itoa(p))
+			total += p
+		}
+		row = append(row, strconv.Itoa(total))
+		_ = csvWriter.Write(row)
+	}
+
+	csvWriter.Flush()
 }
 
 // .............................................................................

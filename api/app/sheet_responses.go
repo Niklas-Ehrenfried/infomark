@@ -32,11 +32,12 @@ import (
 
 // SheetResponse is the response payload for Sheet management.
 type SheetResponse struct {
-	ID        int64     `json:"id" example:"13"`
-	Name      string    `json:"name" example:"Blatt 0"`
-	FileURL   string    `json:"file_url" example:"/api/v1/sheets/13/file"`
-	PublishAt time.Time `json:"publish_at" example:"auto"`
-	DueAt     time.Time `json:"due_at" example:"auto"`
+	ID         int64     `json:"id" example:"13"`
+	Name       string    `json:"name" example:"Blatt 0"`
+	FileURL    string    `json:"file_url" example:"/api/v1/sheets/13/file"`
+	PublishAt  time.Time `json:"publish_at" example:"auto"`
+	DueAt      time.Time `json:"due_at" example:"auto"`
+	AllowTeams bool      `json:"allow_teams"`
 }
 
 // Render post-processes a SheetResponse.
@@ -47,11 +48,12 @@ func (body *SheetResponse) Render(w http.ResponseWriter, r *http.Request) error 
 // newSheetResponse creates a response from a Sheet model.
 func (rs *SheetResource) newSheetResponse(p *model.Sheet) *SheetResponse {
 	return &SheetResponse{
-		ID:        p.ID,
-		Name:      p.Name,
-		PublishAt: p.PublishAt,
-		DueAt:     p.DueAt,
-		FileURL:   fmt.Sprintf("/api/v1/sheets/%s/file", strconv.FormatInt(p.ID, 10)),
+		ID:         p.ID,
+		Name:       p.Name,
+		PublishAt:  p.PublishAt,
+		DueAt:      p.DueAt,
+		AllowTeams: p.AllowTeams,
+		FileURL:    fmt.Sprintf("/api/v1/sheets/%s/file", strconv.FormatInt(p.ID, 10)),
 	}
 }
 

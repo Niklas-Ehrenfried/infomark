@@ -20,6 +20,9 @@ import {
   Progress,
   Empty,
   Tooltip,
+  Checkbox,
+  Typography,
+  Alert,
 } from 'antd';
 import {
   UploadOutlined,
@@ -34,13 +37,17 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  ExclamationCircleOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useParams, Link } from 'react-router-dom';
 import type { UploadProps } from 'antd';
 import agent from '@/api/agent';
-import type { Sheet, Task, Grade, TaskPoints } from '@/types';
+import type { Course, Sheet, Task, Grade, TaskPoints } from '@/types';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+
+const { Text } = Typography;
 
 // The backend caps submission uploads at 4 MB and only accepts zip archives
 // (see api/app/submission.go + server config Limits.MaxRequestFile). We mirror
@@ -50,12 +57,13 @@ const ACCEPTED_ZIP_TYPES = ['application/zip', 'application/x-zip-compressed', '
 
 // Test execution/status enums as emitted by the grading worker
 // (symbol.TestingResult). We only need the handful of states the UI reacts to.
-const TEST_STATE_FINISHED = 1;
+const TEST_STATE_FINISHED = 2;
 const TEST_STATUS_PASSED = 1;
 
 const SheetDetail: React.FC = () => {
   const { courseId, sheetId } = useParams<{ courseId: string; sheetId: string }>();
   const { t } = useTranslation();
+  const [course, setCourse] = useState<Course | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   // Per-task points for the logged-in student (acquired vs. max), keyed by task id.
@@ -64,6 +72,17 @@ const SheetDetail: React.FC = () => {
   const [grades, setGrades] = useState<Map<number, Grade>>(new Map());
   const [loading, setLoading] = useState(true);
   const [uploadingTaskId, setUploadingTaskId] = useState<number | null>(null);
+  const [uploadConfirmModal, setUploadConfirmModal] = useState<{
+    open: boolean;
+    taskId: number | null;
+    file: File | null;
+    isFinal: boolean;
+  }>({
+    open: false,
+    taskId: null,
+    file: null,
+    isFinal: false,
+  });
   const [taskModal, setTaskModal] = useState<{ visible: boolean; task: Task | null }>({ visible: false, task: null });
   const [feedbackDrawer, setFeedbackDrawer] = useState<{ open: boolean; grade: Grade | null; task: Task | null }>({
     open: false,
@@ -72,6 +91,7 @@ const SheetDetail: React.FC = () => {
   });
   const [form] = Form.useForm();
   const [isTutor, setIsTutor] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const cId = Number(courseId);
   const sId = Number(sheetId);
@@ -82,16 +102,25 @@ const SheetDetail: React.FC = () => {
       // Determine the caller's role in this course to decide between the
       // student submission UI and the tutor/admin authoring UI.
       let tutorish = false;
+      let adminish = false;
       try {
         const enrollments = await agent.Account.getEnrollments();
         const enrollment = enrollments.find((e) => e.course_id === cId);
         tutorish = enrollment ? enrollment.role >= 1 : false;
+        adminish = enrollment ? enrollment.role >= 2 : false;
       } catch {
         tutorish = false;
+        adminish = false;
       }
       setIsTutor(tutorish);
+      setIsAdmin(adminish);
 
-      const [sheetData, tasksData] = await Promise.all([agent.Sheets.get(cId, sId), agent.Tasks.getAll(cId, sId)]);
+      const [courseData, sheetData, tasksData] = await Promise.all([
+        agent.Courses.get(cId).catch(() => null),
+        agent.Sheets.get(cId, sId),
+        agent.Tasks.getAll(cId, sId),
+      ]);
+      setCourse(courseData);
       setSheet(sheetData);
       setTasks(tasksData);
 
@@ -105,19 +134,19 @@ const SheetDetail: React.FC = () => {
       }
       setPoints(pointsMap);
 
-      // Result grades in parallel (was an O(2N) serial loop before). A 404
-      // simply means "no submission yet" for that task, so failures are
-      // swallowed per task rather than failing the whole view.
-      const gradeEntries = await Promise.all(
-        tasksData.map(async (task) => {
-          try {
-            const grade = await agent.Tasks.getResult(cId, task.id);
-            return [task.id, grade] as const;
-          } catch {
-            return null;
-          }
-        }),
-      );
+      // Result grades in parallel for students only (staff don't have personal task submissions).
+      const gradeEntries = tutorish
+        ? []
+        : await Promise.all(
+            tasksData.map(async (task) => {
+              try {
+                const grade = await agent.Tasks.getResult(cId, task.id);
+                return [task.id, grade] as const;
+              } catch {
+                return null;
+              }
+            }),
+          );
       const gradesMap = new Map<number, Grade>();
       gradeEntries.forEach((entry) => {
         if (entry) gradesMap.set(entry[0], entry[1]);
@@ -147,18 +176,56 @@ const SheetDetail: React.FC = () => {
       message.error(t('submission.tooLarge'));
       return Upload.LIST_IGNORE;
     }
-    void handleSubmit(taskId, file as File);
+
+    const isTeamSheet = Boolean(course?.teams_enabled && sheet?.allow_teams);
+    if (isTeamSheet) {
+      setUploadConfirmModal({
+        open: true,
+        taskId,
+        file: file as File,
+        isFinal: false,
+      });
+    } else {
+      void handleSubmit(taskId, file as File, false, false);
+    }
     return false;
   };
 
-  const handleSubmit = async (taskId: number, file: File) => {
+  const handleSubmit = async (
+    taskId: number,
+    file: File,
+    isFinal: boolean,
+    forceOverwrite: boolean
+  ) => {
     setUploadingTaskId(taskId);
     try {
-      await agent.Tasks.submitTask(cId, taskId, file);
+      await agent.Tasks.submitTask(cId, taskId, file, {
+        is_final: isFinal,
+        force_overwrite: forceOverwrite,
+      });
       message.success(t('messages.uploadSuccess'));
+      setUploadConfirmModal({ open: false, taskId: null, file: null, isFinal: false });
       await fetchData();
-    } catch {
-      message.error(t('messages.uploadFailed'));
+    } catch (err: any) {
+      if (
+        err.status === 409 ||
+        err.code === 4091 ||
+        (err.message && err.message.includes('FINAL_SUBMISSION_EXISTS'))
+      ) {
+        Modal.confirm({
+          title: t('submission.overwriteFinalTitle'),
+          icon: <ExclamationCircleOutlined />,
+          content: t('submission.overwriteFinalContent'),
+          okText: t('submission.overwriteConfirm'),
+          okType: 'danger',
+          cancelText: t('common.cancel'),
+          onOk: async () => {
+            await handleSubmit(taskId, file, isFinal, true);
+          },
+        });
+      } else {
+        message.error(err.message || t('messages.uploadFailed'));
+      }
     } finally {
       setUploadingTaskId(null);
     }
@@ -166,7 +233,9 @@ const SheetDetail: React.FC = () => {
 
   const handleDownloadOwn = async (taskId: number) => {
     try {
-      await agent.Tasks.downloadOwnSubmission(cId, taskId, `task-${taskId}-submission.zip`);
+      const safeSheetName = (sheet?.name || 'Sheet').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${safeSheetName}_Task_${taskId}_submission.zip`;
+      await agent.Tasks.downloadOwnSubmission(cId, taskId, filename);
     } catch {
       message.error(t('messages.downloadFailed'));
     }
@@ -244,6 +313,17 @@ const SheetDetail: React.FC = () => {
         </Descriptions>
       </Card>
 
+      {!isTutor && Boolean(course?.teams_enabled && sheet?.allow_teams) && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<TeamOutlined />}
+          message={t('submission.teamUploadNoticeTitle', 'Team Exercise')}
+          description={t('submission.teamUploadNoticeDesc', 'Submissions on this exercise sheet are shared across all team members.')}
+          style={{ marginTop: 16 }}
+        />
+      )}
+
       <Card title={t('sheet.tasks')} style={{ marginTop: 16 }}>
         {tasks.length === 0 ? (
           <Empty description={t('sheet.tasks')} />
@@ -259,6 +339,12 @@ const SheetDetail: React.FC = () => {
 
               const testsFinished = grade?.public_execution_state === TEST_STATE_FINISHED;
               const testsPassed = grade?.public_test_status === TEST_STATUS_PASSED;
+              const noPublicTests =
+                !testsFinished &&
+                Boolean(
+                  grade?.public_test_log?.includes('No public dockerimage was specified') ||
+                    grade?.public_test_log?.includes('no unit tests for this task are available'),
+                );
 
               const studentActions = [
                 <Upload
@@ -291,7 +377,7 @@ const SheetDetail: React.FC = () => {
                 ) : null,
               ].filter(Boolean) as React.ReactNode[];
 
-              const tutorActions = [
+              const adminActions = [
                 <Dropdown
                   key="menu"
                   menu={{
@@ -306,7 +392,7 @@ const SheetDetail: React.FC = () => {
               ];
 
               return (
-                <List.Item actions={isTutor ? tutorActions : studentActions}>
+                <List.Item actions={isAdmin ? adminActions : isTutor ? [] : studentActions}>
                   <List.Item.Meta
                     title={task.name}
                     description={
@@ -318,7 +404,10 @@ const SheetDetail: React.FC = () => {
                           {hasSubmission && (
                             <Tag color="blue">{t('task.submitted')}</Tag>
                           )}
-                          {grade && (
+                          {grade?.is_final && (
+                            <Tag color="gold">{t('submission.finalSolution')}</Tag>
+                          )}
+                          {grade && !noPublicTests && (
                             <Tag
                               icon={
                                 !testsFinished ? <LoadingOutlined /> : testsPassed ? <CheckCircleOutlined /> : <CloseCircleOutlined />
@@ -333,6 +422,14 @@ const SheetDetail: React.FC = () => {
                             </Tag>
                           )}
                         </Space>
+                        {grade?.submitted_by_name && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('submission.submittedBy', {
+                              name: grade.submitted_by_name,
+                              date: dayjs(grade.submission_updated_at).format('MMM D, HH:mm'),
+                            })}
+                          </Text>
+                        )}
                         {!isTutor && hasSubmission && (
                           <Progress
                             percent={percent}
@@ -390,6 +487,16 @@ const SheetDetail: React.FC = () => {
                     : t('submission.testsFailed')}
                 </Tag>
               </Descriptions.Item>
+              {feedbackDrawer.grade.is_final && (
+                <Descriptions.Item label={t('submission.status')}>
+                  <Tag color="gold">{t('submission.finalSolution')}</Tag>
+                </Descriptions.Item>
+              )}
+              {feedbackDrawer.grade.submitted_by_name && (
+                <Descriptions.Item label={t('submission.submittedByLabel')}>
+                  {feedbackDrawer.grade.submitted_by_name} ({dayjs(feedbackDrawer.grade.submission_updated_at).format('MMM D, YYYY HH:mm')})
+                </Descriptions.Item>
+              )}
             </Descriptions>
 
             {feedbackDrawer.grade.public_test_log && (
@@ -422,7 +529,50 @@ const SheetDetail: React.FC = () => {
         )}
       </Drawer>
 
-      {isTutor && (
+      {/* Team Submission Confirmation Modal */}
+      <Modal
+        title={t('submission.confirmUploadTitle')}
+        open={uploadConfirmModal.open}
+        onOk={() => {
+          if (uploadConfirmModal.taskId && uploadConfirmModal.file) {
+            void handleSubmit(
+              uploadConfirmModal.taskId,
+              uploadConfirmModal.file,
+              uploadConfirmModal.isFinal,
+              false
+            );
+          }
+        }}
+        onCancel={() =>
+          setUploadConfirmModal({ open: false, taskId: null, file: null, isFinal: false })
+        }
+        confirmLoading={uploadingTaskId !== null}
+        okText={t('task.submit')}
+        cancelText={t('common.cancel')}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <p>
+            {t('submission.fileSelected')}: <strong>{uploadConfirmModal.file?.name}</strong>
+          </p>
+          <Alert
+            type="info"
+            showIcon
+            icon={<TeamOutlined />}
+            message={t('submission.teamUploadNoticeTitle')}
+            description={t('submission.teamUploadNoticeDesc')}
+          />
+          <Checkbox
+            checked={uploadConfirmModal.isFinal}
+            onChange={(e) =>
+              setUploadConfirmModal((prev) => ({ ...prev, isFinal: e.target.checked }))
+            }
+          >
+            <Text strong>{t('submission.markFinalCheckbox')}</Text>
+          </Checkbox>
+        </Space>
+      </Modal>
+
+      {isAdmin && (
         <FloatButton icon={<PlusOutlined />} type="primary" tooltip={t('sheet.addTask')} onClick={() => handleTaskModalOpen()} />
       )}
     </div>

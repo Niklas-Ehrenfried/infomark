@@ -27,13 +27,21 @@ import (
 	"github.com/infomark-org/infomark/symbol"
 )
 
+type GradeOverrideItem struct {
+	UserID         int64  `json:"user_id"`
+	AcquiredPoints int    `json:"acquired_points"`
+	Feedback       string `json:"feedback"`
+}
+
 // GradeRequest is the request payload for submission management.
 // This will mostly handle the Feedback from tutors. Other changes like
 // execution state will be handle internally and is not user-facing.
 type GradeRequest struct {
 	// SubmissionID   int64  `json:"submission_id"`
-	AcquiredPoints int    `json:"acquired_points" example:"13"`
-	Feedback       string `json:"feedback" example:"Das war gut"`
+	AcquiredPoints       int                 `json:"acquired_points" example:"13"`
+	Feedback             string              `json:"feedback" example:"Das war gut"`
+	Overrides            []GradeOverrideItem `json:"overrides,omitempty"`
+	ClearOverrideUserIDs []int64             `json:"clear_override_user_ids,omitempty"`
 }
 
 // Bind preprocesses a GradeRequest.

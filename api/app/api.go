@@ -21,6 +21,7 @@ package app
 
 import (
 	"github.com/alexedwards/scs"
+	null "github.com/guregu/null/v6"
 	"github.com/infomark-org/infomark/auth/authenticate"
 	"github.com/infomark-org/infomark/auth/authorize"
 	"github.com/infomark-org/infomark/database"
@@ -144,6 +145,7 @@ type GroupStore interface {
 	EnrolledUsers(courseID int64, groupID int64, roleFilter []string,
 		filterFirstName string, filterLastName string, filterEmail string, filterSubject string,
 		filterLanguage string) ([]model.UserCourse, error)
+	AssignStudentToGroup(userID, groupID, courseID int64) error
 }
 
 // MaterialStore defines material related database queries
@@ -162,6 +164,10 @@ type SubmissionStore interface {
 	Get(submissionID int64) (*model.Submission, error)
 	GetByUserAndTask(userID int64, taskID int64) (*model.Submission, error)
 	Create(p *model.Submission) (*model.Submission, error)
+	Update(p *model.Submission) error
+	GetForTeamAndTask(teamID, taskID int64) (*model.Submission, error)
+	GetSubmissionsForTeamAndTask(teamID, taskID int64) ([]model.Submission, error)
+	PrepareUploadSubmissions(courseID, taskID, usedUserID int64, targetUserIDs []int64, teamID null.Int, isFinal bool, defaultPublicTestLog, defaultPrivateTestLog string) (*model.Submission, *model.Grade, []int64, error)
 	GetFiltered(filterCourseID, filterGroupID, filterUserID, filterSheetID, filterTaskID int64) ([]model.Submission, error)
 }
 
@@ -192,6 +198,29 @@ type GradeStore interface {
 	UpdatePublicTestInfo(gradeID int64, log string, status symbol.TestingResult) error
 	IdentifyTaskOfGrade(gradeID int64) (*model.Task, error)
 	GetOverviewGrades(courseID int64, groupID int64) ([]model.OverviewGrade, error)
+	GetTeammateGrades(gradeID int64) ([]database.TeammateGrade, error)
+	UpdateWithOverrides(gradeID int64, basePoints int, baseFeedback string, tutorID int64, overrides map[int64]database.MemberGradeOverride, clearOverrideUserIDs []int64) error
+}
+
+// TeamStore defines team related database queries
+type TeamStore interface {
+	Get(teamID int64) (*model.Team, error)
+	GetByToken(token string) (*model.Team, error)
+	GetForUser(userID, courseID int64) (*model.Team, error)
+	GetMembers(teamID int64) ([]model.TeamMemberView, error)
+	GetMembersFull(teamID int64) ([]model.TeamMember, error)
+	CreateSoloTeam(userID, courseID int64) (*model.Team, error)
+	EnsureSoloTeams(courseID int64) error
+	EnsureSingleGroupEnrollment(courseID int64) error
+	GenerateToken(teamID int64) (string, error)
+	ClearTokensForCourse(courseID int64) error
+	DeleteMember(userID, courseID int64) error
+	JoinTeam(userBID, targetTeamID, courseID int64, consent bool) ([][2]int64, error)
+	MoveMember(userID, targetTeamID, courseID int64) ([][2]int64, error)
+	SplitToSolo(userID, courseID int64) (*model.Team, error)
+	CreateCustomTeam(userIDs []int64, courseID int64) (*model.Team, [][2]int64, error)
+	ListRoster(courseID int64, tutorID int64, query string) ([]model.TeamRosterMember, error)
+	GetTeamNumber(teamID, courseID int64) int64
 }
 
 // API provides application resources and handlers.
@@ -209,6 +238,7 @@ type API struct {
 	Grade      *GradeResource
 	Common     *CommonResource
 	Exam       *ExamResource
+	Team       *TeamResource
 }
 
 // Stores is the collection of stores. We use this struct to express a kind of
@@ -223,6 +253,7 @@ type Stores struct {
 	Material   MaterialStore
 	Grade      GradeStore
 	Exam       ExamStore
+	Team       TeamStore
 }
 
 // NewStores build all stores and connect them to a database.
@@ -237,6 +268,7 @@ func NewStores(db *sqlx.DB) *Stores {
 		Material:   database.NewMaterialStore(db),
 		Grade:      database.NewGradeStore(db),
 		Exam:       database.NewExamStore(db),
+		Team:       database.NewTeamStore(db),
 	}
 }
 
@@ -258,6 +290,7 @@ func NewAPI(db *sqlx.DB, tokenAuth *authenticate.TokenAuth, sessionAuth *scs.Man
 		Grade:      NewGradeResource(stores),
 		Common:     NewCommonResource(stores),
 		Exam:       NewExamResource(stores),
+		Team:       NewTeamResource(stores),
 	}
 	return api, nil
 }

@@ -35,4 +35,9 @@ type Course struct {
 	BeginsAt           time.Time `db:"begins_at"`
 	EndsAt             time.Time `db:"ends_at"`
 	RequiredPercentage int       `db:"required_percentage"`
+
+	TeamsEnabled             bool `db:"teams_enabled"`
+	TeamFormationOpen        bool `db:"team_formation_open"`
+	MaxTeamSize              int  `db:"max_team_size"`
+	EnforceSameExerciseGroup bool `db:"enforce_same_exercise_group"`
 }

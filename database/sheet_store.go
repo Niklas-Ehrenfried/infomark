@@ -81,7 +81,7 @@ func (s *SheetStore) SheetsOfCourse(courseID int64) ([]model.Sheet, error) {
 
 	err := s.db.Select(&p, `
 SELECT
-  s.id, s.created_at, s.updated_at, s.name, s.publish_at, s.due_at
+  s.id, s.created_at, s.updated_at, s.name, s.publish_at, s.due_at, s.allow_teams
 FROM
   sheet_course sc
 INNER JOIN

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-chi/render"
+	null "github.com/guregu/null/v6"
 	"github.com/infomark-org/infomark/api/helper"
 	"github.com/infomark-org/infomark/auth/authorize"
 	"github.com/infomark-org/infomark/configuration"
@@ -34,21 +35,40 @@ import (
 
 // .............................................................................
 
+// TeammateGradeView presents teammate scores and individual override status for tutors.
+type TeammateGradeView struct {
+	GradeID              int64  `json:"grade_id"`
+	UserID               int64  `json:"user_id"`
+	FirstName            string `json:"first_name"`
+	LastName             string `json:"last_name"`
+	AcquiredPoints       int    `json:"acquired_points"`
+	Feedback             string `json:"feedback"`
+	IsIndividualOverride bool   `json:"is_individual_override"`
+}
+
 // GradeResponse is the response payload for Grade management.
 type GradeResponse struct {
-	ID                    int64     `json:"id" example:"1"`
-	UpdatedAt             time.Time `json:"updated_at" example:""`
-	PublicExecutionState  int       `json:"public_execution_state" example:"1"`
-	PrivateExecutionState int       `json:"private_execution_state" example:"1"`
-	PublicTestLog         string    `json:"public_test_log" example:"Lorem Ipsum"`
-	PrivateTestLog        string    `json:"private_test_log" example:"Lorem Ipsum"`
-	PublicTestStatus      int       `json:"public_test_status" example:"1"`
-	PrivateTestStatus     int       `json:"private_test_status" example:"0"`
-	AcquiredPoints        int       `json:"acquired_points" example:"19"`
-	Feedback              string    `json:"feedback" example:"Some feedback"`
-	TutorID               int64     `json:"tutor_id" example:"2"`
-	SubmissionID          int64     `json:"submission_id" example:"31"`
-	FileURL               string    `json:"file_url" example:"/api/v1/submissions/61/file"`
+	ID                    int64               `json:"id" example:"1"`
+	UpdatedAt             time.Time           `json:"updated_at" example:""`
+	PublicExecutionState  int                 `json:"public_execution_state" example:"1"`
+	PrivateExecutionState int                 `json:"private_execution_state" example:"1"`
+	PublicTestLog         string              `json:"public_test_log" example:"Lorem Ipsum"`
+	PrivateTestLog        string              `json:"private_test_log" example:"Lorem Ipsum"`
+	PublicTestStatus      int                 `json:"public_test_status" example:"1"`
+	PrivateTestStatus     int                 `json:"private_test_status" example:"0"`
+	AcquiredPoints        int                 `json:"acquired_points" example:"19"`
+	Feedback              string              `json:"feedback" example:"Some feedback"`
+	TutorID               int64               `json:"tutor_id" example:"2"`
+	SubmissionID          int64               `json:"submission_id" example:"31"`
+	FileURL               string              `json:"file_url" example:"/api/v1/submissions/61/file"`
+	IsIndividualOverride  bool                `json:"is_individual_override"`
+	TeamID                null.Int            `json:"team_id"`
+	TeamNumber            null.Int            `json:"team_number"`
+	SubmittedByUserID     null.Int            `json:"submitted_by_user_id"`
+	SubmittedByName       string              `json:"submitted_by_name,omitempty"`
+	IsFinal               bool                `json:"is_final"`
+	SubmissionUpdatedAt   time.Time           `json:"submission_updated_at"`
+	TeammateGrades        []TeammateGradeView `json:"teammate_grades,omitempty"`
 	User                  *struct {
 		ID        int64  `json:"id" example:"1"`
 		FirstName string `json:"first_name" example:"Max"`
@@ -101,6 +121,7 @@ func newGradeResponse(p *model.Grade, courseID int64) *GradeResponse {
 		User:                  user,
 		SubmissionID:          p.SubmissionID,
 		FileURL:               fileURL,
+		IsIndividualOverride:  p.IsIndividualOverride,
 	}
 }
 
@@ -138,9 +159,11 @@ type MissingGradeResponse struct {
 			Email     string `json:"email" example:"test@unit-tuebingen.de"`
 		} `json:"user"`
 	} `json:"grade"`
-	CourseID int64 `json:"course_id" example:"1"`
-	SheetID  int64 `json:"sheet_id" example:"10"`
-	TaskID   int64 `json:"task_id" example:"2"`
+	CourseID   int64    `json:"course_id" example:"1"`
+	SheetID    int64    `json:"sheet_id" example:"10"`
+	TaskID     int64    `json:"task_id" example:"2"`
+	TeamID     null.Int `json:"team_id"`
+	TeamNumber null.Int `json:"team_number"`
 }
 
 // Render post-processes a MissingGradeResponse.
@@ -205,10 +228,12 @@ func newMissingGradeResponse(p *model.MissingGrade) *MissingGradeResponse {
 	}
 
 	r := &MissingGradeResponse{
-		Grade:    grade,
-		CourseID: p.CourseID,
-		SheetID:  p.SheetID,
-		TaskID:   p.TaskID,
+		Grade:      grade,
+		CourseID:   p.CourseID,
+		SheetID:    p.SheetID,
+		TaskID:     p.TaskID,
+		TeamID:     p.TeamID,
+		TeamNumber: p.TeamNumber,
 	}
 
 	return r

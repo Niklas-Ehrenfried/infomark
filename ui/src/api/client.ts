@@ -40,6 +40,7 @@ class ApiClient {
       return {
         message: data?.error || data?.message || 'An error occurred',
         status: error.response.status,
+        code: data?.code,
       };
     }
     if (error.request) {
@@ -94,9 +95,17 @@ class ApiClient {
   }
 
   // File upload
-  async upload<T>(url: string, file: File, onProgress?: (progress: number) => void): Promise<T> {
+  async upload<T>(url: string, file: File, extraData?: Record<string, any>, onProgress?: (progress: number) => void): Promise<T> {
     const formData = new FormData();
     formData.append('file_data', file); // Backend expects 'file_data' not 'file'
+
+    if (extraData) {
+      for (const [key, value] of Object.entries(extraData)) {
+        if (value !== undefined && value !== null) {
+          formData.append(key, String(value));
+        }
+      }
+    }
 
     const response = await this.client.post<T>(url, formData, {
       headers: {
@@ -113,9 +122,10 @@ class ApiClient {
   }
 
   // File download
-  async download(url: string, filename: string): Promise<void> {
+  async download(url: string, filename: string, params?: any): Promise<void> {
     const response = await this.client.get(url, {
       responseType: 'blob',
+      params,
     });
     
     const blob = new Blob([response.data]);
