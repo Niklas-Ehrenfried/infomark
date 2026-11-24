@@ -35,4 +35,7 @@ type Course struct {
 	BeginsAt           time.Time `db:"begins_at"`
 	EndsAt             time.Time `db:"ends_at"`
 	RequiredPercentage int       `db:"required_percentage"`
+
+	GroupSolver         string `db:"group_solver"`
+	MinGroupPreferences int    `db:"min_group_preferences"`
 }

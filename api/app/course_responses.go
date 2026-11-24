@@ -30,12 +30,14 @@ import (
 
 // CourseResponse is the response payload for course management.
 type CourseResponse struct {
-	ID                 int64     `json:"id" example:"1"`
-	Name               string    `json:"name" example:"Info2"`
-	Description        string    `json:"description" example:"Some course description here"`
-	BeginsAt           time.Time `json:"begins_at" example:"auto"`
-	EndsAt             time.Time `json:"ends_at" example:"auto"`
-	RequiredPercentage int       `json:"required_percentage" example:"80"`
+	ID                  int64     `json:"id" example:"1"`
+	Name                string    `json:"name" example:"Info2"`
+	Description         string    `json:"description" example:"Some course description here"`
+	BeginsAt            time.Time `json:"begins_at" example:"auto"`
+	EndsAt              time.Time `json:"ends_at" example:"auto"`
+	RequiredPercentage  int       `json:"required_percentage" example:"80"`
+	GroupSolver         string    `json:"group_solver"`
+	MinGroupPreferences int       `json:"min_group_preferences"`
 }
 
 // Render post-processes a CourseResponse.
@@ -46,12 +48,14 @@ func (body *CourseResponse) Render(w http.ResponseWriter, r *http.Request) error
 // newCourseResponse creates a response from a course model.
 func (rs *CourseResource) newCourseResponse(p *model.Course) *CourseResponse {
 	return &CourseResponse{
-		ID:                 p.ID,
-		Name:               p.Name,
-		Description:        p.Description,
-		BeginsAt:           p.BeginsAt,
-		EndsAt:             p.EndsAt,
-		RequiredPercentage: p.RequiredPercentage,
+		ID:                  p.ID,
+		Name:                p.Name,
+		Description:         p.Description,
+		BeginsAt:            p.BeginsAt,
+		EndsAt:              p.EndsAt,
+		RequiredPercentage:  p.RequiredPercentage,
+		GroupSolver:         p.GroupSolver,
+		MinGroupPreferences: p.MinGroupPreferences,
 	}
 }
 

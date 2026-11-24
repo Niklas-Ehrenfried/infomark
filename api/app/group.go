@@ -515,6 +515,108 @@ func (rs *GroupResource) SendEmailHandler(w http.ResponseWriter, r *http.Request
 
 // .............................................................................
 
+// AutoAssignHandler automatically distributes enrolled students across groups based on their bids.
+// URL: /courses/{course_id}/groups/auto-assign
+// METHOD: post
+// TAG: groups
+func (rs *GroupResource) AutoAssignHandler(w http.ResponseWriter, r *http.Request) {
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+
+	var req AutoAssignRequest
+	_ = render.Bind(r, &req)
+
+	result, err := rs.Stores.Group.AutoAssignStudents(course.ID, req.Solver)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	render.JSON(w, r, result)
+}
+
+// SaveBidsHandler saves all preferences for a student with anti-gaming validation.
+// URL: /courses/{course_id}/groups/bids
+// METHOD: post
+// TAG: groups
+func (rs *GroupResource) SaveBidsHandler(w http.ResponseWriter, r *http.Request) {
+	courseRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+	if courseRole != authorize.STUDENT {
+		_ = render.Render(w, r, ErrBadRequestWithDetails(errors.New("only students in a course can submit group preferences")))
+		return
+	}
+
+	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+
+	data := &BatchGroupBidsRequest{}
+	if err := render.Bind(r, data); err != nil {
+		_ = render.Render(w, r, ErrBadRequestWithDetails(err))
+		return
+	}
+
+	allGroups, err := rs.Stores.Group.GroupsOfCourse(course.ID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	validGroupIDs := make(map[int64]bool, len(allGroups))
+	for _, g := range allGroups {
+		validGroupIDs[g.ID] = true
+	}
+
+	validBids := make(map[int64]int, len(data.Bids))
+	for _, b := range data.Bids {
+		if validGroupIDs[b.GroupID] {
+			validBids[b.GroupID] = b.Bid
+		}
+	}
+
+	posCount := 0
+	for _, bid := range validBids {
+		if bid > 0 {
+			posCount++
+		}
+	}
+
+	required := course.MinGroupPreferences
+	if required <= 0 {
+		required = 3
+	}
+	if required > len(allGroups) {
+		required = len(allGroups)
+	}
+
+	if posCount < required {
+		_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("anti-gaming requirement: you must select at least %d tutorial groups you can attend (slider > 0) before submitting preferences", required)))
+		return
+	}
+
+	if err := rs.Stores.Group.SaveBidsForUser(accessClaims.LoginID, validBids); err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{"status": "ok"})
+}
+
+// ResetAssignmentsHandler removes all students from groups in the course.
+// URL: /courses/{course_id}/groups/reset-assignments
+// METHOD: post
+// TAG: groups
+func (rs *GroupResource) ResetAssignmentsHandler(w http.ResponseWriter, r *http.Request) {
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+
+	if err := rs.Stores.Group.ResetGroupAssignments(course.ID); err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"status": "ok",
+	})
+}
+
 // Context middleware is used to load an group object from
 // the URL parameter `TaskID` passed through as the request. In case
 // the group could not be found, we stop here and return a 404.

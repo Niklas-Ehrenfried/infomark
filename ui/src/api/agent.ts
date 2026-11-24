@@ -30,6 +30,7 @@ import type {
   TaskRatingResponse,
   PaginationParams,
   FilterParams,
+  AutoAssignResult,
 } from '@/types';
 
 const Auth = {
@@ -286,6 +287,15 @@ const Groups = {
   
   placeBid: (courseId: number, groupId: number, bid: number) =>
     apiClient.post<void>(`/courses/${courseId}/groups/${groupId}/bids`, { bid }),
+
+  submitBids: (courseId: number, bids: { group_id: number; bid: number }[]) =>
+    apiClient.post<void>(`/courses/${courseId}/groups/bids`, { bids }),
+
+  autoAssign: (courseId: number, solver?: string) =>
+    apiClient.post<AutoAssignResult>(`/courses/${courseId}/groups/auto-assign`, { solver }),
+
+  resetAssignments: (courseId: number) =>
+    apiClient.post<{ status: string }>(`/courses/${courseId}/groups/reset-assignments`),
   
   sendEmail: (courseId: number, groupId: number, mail: Mail) =>
     apiClient.post<void>(`/courses/${courseId}/groups/${groupId}/emails`, mail),

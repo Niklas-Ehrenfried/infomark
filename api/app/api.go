@@ -144,6 +144,10 @@ type GroupStore interface {
 	EnrolledUsers(courseID int64, groupID int64, roleFilter []string,
 		filterFirstName string, filterLastName string, filterEmail string, filterSubject string,
 		filterLanguage string) ([]model.UserCourse, error)
+	AutoAssignStudents(courseID int64, requestedSolver string) (*model.AutoAssignResult, error)
+	ResetGroupAssignments(courseID int64) error
+	AssignStudentToGroup(userID, groupID, courseID int64) error
+	SaveBidsForUser(userID int64, bids map[int64]int) error
 }
 
 // MaterialStore defines material related database queries

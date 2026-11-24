@@ -331,6 +331,9 @@ func New(db *sqlx.DB, promhttp http.Handler, log bool) (*chi.Mux, error) {
 								r.Get("/own", appAPI.Group.GetMineHandler)
 								r.Get("/", appAPI.Group.IndexHandler)
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/", appAPI.Group.CreateHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/auto-assign", appAPI.Group.AutoAssignHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/reset-assignments", appAPI.Group.ResetAssignmentsHandler)
+								r.Post("/bids", appAPI.Group.SaveBidsHandler)
 
 								r.Route("/{group_id}", func(r chi.Router) {
 									r.Use(appAPI.Group.Context)

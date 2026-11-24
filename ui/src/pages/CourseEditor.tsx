@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, DatePicker, InputNumber, message } from 'antd';
+import { Form, Input, Button, Card, DatePicker, InputNumber, Select, Divider, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import agent from '@/api/agent';
 import dayjs from 'dayjs';
@@ -26,6 +26,8 @@ const CourseEditor: React.FC = () => {
         ...course,
         begins_at: dayjs(course.begins_at),
         ends_at: dayjs(course.ends_at),
+        group_solver: course.group_solver ?? 'optimal',
+        min_group_preferences: course.min_group_preferences ?? 3,
       });
     } catch (error) {
       message.error(t('course.loadFailed'));
@@ -81,6 +83,33 @@ const CourseEditor: React.FC = () => {
 
         <Form.Item name="required_percentage" label={t('course.requiredPercentage')} rules={[{ required: true }]} initialValue={50}>
           <InputNumber min={0} max={100} style={{ width: '100%' }} />
+        </Form.Item>
+
+        <Divider orientation="left">{t('course.tutorialGroupSettings')}</Divider>
+
+        <Form.Item
+          name="group_solver"
+          label={t('course.defaultAllocationSolver')}
+          initialValue="optimal"
+          extra={t('course.defaultAllocationSolverHelp')}
+        >
+          <Select
+            options={[
+              { value: 'optimal', label: t('course.solverOptimal') },
+              { value: 'regret', label: t('course.solverRegret') },
+              { value: 'greedy', label: t('course.solverGreedy') },
+            ]}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="min_group_preferences"
+          label={t('course.minPositivePreferences')}
+          initialValue={3}
+          rules={[{ required: true, type: 'number', min: 1, max: 20 }]}
+          extra={t('course.minPositivePreferencesHelp')}
+        >
+          <InputNumber min={1} max={20} style={{ width: '100%' }} />
         </Form.Item>
 
         <Form.Item>

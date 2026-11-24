@@ -57,6 +57,8 @@ export interface Course {
   begins_at: string;
   ends_at: string;
   required_percentage: number;
+  group_solver?: 'optimal' | 'regret' | 'greedy';
+  min_group_preferences?: number;
 }
 
 export interface CourseRole {
@@ -118,6 +120,13 @@ export interface GroupBid {
 export interface GroupEnrollmentChange {
   user_id: number;
   group_id: number;
+}
+
+export interface AutoAssignResult {
+  assigned_count: number;
+  solver_used: string;
+  avg_satisfaction: number;
+  top_choice_pct: number;
 }
 
 // Grade Types

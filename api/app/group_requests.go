@@ -32,7 +32,7 @@ type GroupRequest struct {
 	Tutor *struct {
 		ID int64 `json:"id" example:"1"`
 	} `json:"tutor"`
-	// CourseID    int64  `json:"course_id"`
+	TutorID     *int64 `json:"tutor_id"`
 	Description string `json:"description" example:"Gruppe fuer ersties am Montag im Raum C25435"`
 }
 
@@ -41,6 +41,12 @@ func (body *GroupRequest) Bind(r *http.Request) error {
 
 	if body == nil {
 		return errors.New("missing \"group\" data")
+	}
+
+	if body.Tutor == nil && body.TutorID != nil {
+		body.Tutor = &struct {
+			ID int64 `json:"id" example:"1"`
+		}{ID: *body.TutorID}
 	}
 
 	if body.Tutor == nil {
@@ -84,7 +90,6 @@ func (body *GroupBidRequest) Validate() error {
 	return validation.ValidateStruct(body,
 		validation.Field(
 			&body.Bid,
-			validation.Required,
 			validation.Min(0),
 			validation.Max(10),
 		),
@@ -111,4 +116,39 @@ func (body *GroupEnrollmentRequest) Validate() error {
 			validation.Required,
 		),
 	)
+}
+
+// AutoAssignRequest is payload for choosing a solver during auto-assignment.
+type AutoAssignRequest struct {
+	Solver string `json:"solver"`
+}
+
+func (body *AutoAssignRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// GroupBidItem represents a single group preference bid.
+type GroupBidItem struct {
+	GroupID int64 `json:"group_id"`
+	Bid     int   `json:"bid"`
+}
+
+// BatchGroupBidsRequest is payload for submitting multiple group preferences at once.
+type BatchGroupBidsRequest struct {
+	Bids []GroupBidItem `json:"bids"`
+}
+
+func (body *BatchGroupBidsRequest) Bind(r *http.Request) error {
+	if body == nil || len(body.Bids) == 0 {
+		return errors.New("missing bids data")
+	}
+	for _, b := range body.Bids {
+		if b.GroupID <= 0 {
+			return errors.New("invalid group_id")
+		}
+		if b.Bid < 0 || b.Bid > 10 {
+			return errors.New("bid must be between 0 and 10")
+		}
+	}
+	return nil
 }
