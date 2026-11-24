@@ -300,3 +300,15 @@ AND
 	}
 
 }
+
+func (s *CourseStore) TotalMaxPointsOfCourse(courseID int64) (int, error) {
+	var total int
+	err := s.db.Get(&total, `
+SELECT COALESCE(SUM(t.max_points), 0)
+FROM tasks t
+INNER JOIN task_sheet ts ON ts.task_id = t.id
+INNER JOIN sheet_course sc ON sc.sheet_id = ts.sheet_id
+WHERE sc.course_id = $1;
+`, courseID)
+	return total, err
+}

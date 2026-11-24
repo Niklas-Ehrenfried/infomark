@@ -57,6 +57,7 @@ export interface Course {
   begins_at: string;
   ends_at: string;
   required_percentage: number;
+  bonus_mode?: 0 | 1 | 2;
 }
 
 export interface CourseRole {
@@ -196,6 +197,10 @@ export interface Exam {
   description: string;
   exam_time: string;
   course_id: number;
+  enrolled_count?: number;
+  max_points?: number;
+  bonus_enabled?: boolean;
+  bonus_percentage?: number;
 }
 
 // `GET /account/exams/enrollments` and the exam enroll endpoints return this
@@ -208,6 +213,9 @@ export interface ExamEnrollment {
   user_id: number;
   course_id: number;
   exam_id: number;
+  exam_points?: number;
+  bonus_points?: number;
+  raw_mark?: string;
 }
 
 // Mail Types
@@ -258,6 +266,7 @@ export interface GradeOverviewAchievement {
 export interface GradeOverview {
   sheets: GradeOverviewSheet[];
   achievements: GradeOverviewAchievement[];
+  total_max_points?: number;
 }
 
 // Account Types

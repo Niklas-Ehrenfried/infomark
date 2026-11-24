@@ -55,6 +55,8 @@ type ExamStore interface {
 	GetEnrollmentsInCourseOfExam(courseID int64, examID int64) ([]model.UserExam, error)
 	GetEnrollmentOfUser(examID int64, userID int64) (*model.UserExam, error)
 	UpdateUserExam(p *model.UserExam) error
+	GetEnrolledCount(examID int64) (int, error)
+	GetEnrolledCountsForCourse(courseID int64) (map[int64]int, error)
 }
 
 // CourseStore defines course related database queries
@@ -83,6 +85,7 @@ type CourseStore interface {
 	PointsForUser(userID int64, courseID int64) ([]model.SheetPoints, error)
 	RoleInCourse(userID int64, courseID int64) (authorize.CourseRole, error)
 	UpdateRole(courseID, userID int64, role int) error
+	TotalMaxPointsOfCourse(courseID int64) (int, error)
 }
 
 // SheetStore specifies required database queries for Sheet management.

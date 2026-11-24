@@ -342,6 +342,9 @@ const Exams = {
 
   disenroll: (courseId: number, examId: number) =>
     apiClient.delete<void>(`/courses/${courseId}/exams/${examId}/enrollments`),
+
+  updateEnrollment: (courseId: number, examId: number, data: { user_id: number; status: number; mark: string; exam_points?: number; bonus_points?: number; raw_mark?: string }) =>
+    apiClient.put<void>(`/courses/${courseId}/exams/${examId}/enrollments`, data),
 };
 
 const Terms = {

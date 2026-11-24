@@ -99,6 +99,7 @@ func (rs *CourseResource) CreateHandler(w http.ResponseWriter, r *http.Request) 
 	course.BeginsAt = data.BeginsAt
 	course.EndsAt = data.EndsAt
 	course.RequiredPercentage = data.RequiredPercentage
+	course.BonusMode = data.BonusMode
 
 	// create course entry in database
 	newCourse, err := rs.Stores.Course.Create(course)
@@ -171,6 +172,7 @@ func (rs *CourseResource) EditHandler(w http.ResponseWriter, r *http.Request) {
 	course.BeginsAt = data.BeginsAt
 	course.EndsAt = data.EndsAt
 	course.RequiredPercentage = data.RequiredPercentage
+	course.BonusMode = data.BonusMode
 
 	// update database entry
 	if err := rs.Stores.Course.Update(course); err != nil {

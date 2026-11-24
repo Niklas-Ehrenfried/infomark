@@ -365,7 +365,15 @@ const CourseDetail: React.FC = () => {
         <CheckSquareOutlined /> {t('course.exams')}
       </span>
     ),
-    children: <ExamsPanel courseId={cId} isStudent={isStudent} />,
+    children: (
+      <ExamsPanel
+        courseId={cId}
+        isStudent={isStudent}
+        canManage={isAdmin}
+        course={course}
+        studentPoints={points}
+      />
+    ),
   };
 
   // Student's own per-sheet grades table.

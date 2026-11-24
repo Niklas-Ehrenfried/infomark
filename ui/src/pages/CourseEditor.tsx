@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, DatePicker, InputNumber, message } from 'antd';
+import { Form, Input, Button, Card, DatePicker, InputNumber, Select, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import agent from '@/api/agent';
 import dayjs from 'dayjs';
@@ -26,6 +26,7 @@ const CourseEditor: React.FC = () => {
         ...course,
         begins_at: dayjs(course.begins_at),
         ends_at: dayjs(course.ends_at),
+        bonus_mode: course.bonus_mode ?? 1,
       });
     } catch (error) {
       message.error(t('course.loadFailed'));
@@ -81,6 +82,16 @@ const CourseEditor: React.FC = () => {
 
         <Form.Item name="required_percentage" label={t('course.requiredPercentage')} rules={[{ required: true }]} initialValue={50}>
           <InputNumber min={0} max={100} style={{ width: '100%' }} />
+        </Form.Item>
+
+        <Form.Item name="bonus_mode" label={t('course.bonusCalculationMode')} initialValue={1} extra={t('course.bonusModeHelp')}>
+          <Select
+            options={[
+              { value: 0, label: t('course.bonusModeDisabled') },
+              { value: 1, label: t('course.bonusModeAuto') },
+              { value: 2, label: t('course.bonusModeManual') },
+            ]}
+          />
         </Form.Item>
 
         <Form.Item>

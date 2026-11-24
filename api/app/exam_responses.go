@@ -27,11 +27,15 @@ import (
 
 // ExamResponse is the response payload for course management.
 type ExamResponse struct {
-	ID          int64     `json:"id" example:"1"`
-	Name        string    `json:"name" example:"Info2"`
-	Description string    `json:"description" example:"Some course description here"`
-	ExamTime    time.Time `json:"exam_time" example:"auto"`
-	CourseID    int64     `json:"course_id" example:"1"`
+	ID              int64     `json:"id" example:"1"`
+	Name            string    `json:"name" example:"Info2"`
+	Description     string    `json:"description" example:"Some course description here"`
+	ExamTime        time.Time `json:"exam_time" example:"auto"`
+	CourseID        int64     `json:"course_id" example:"1"`
+	MaxPoints       int       `json:"max_points"`
+	BonusEnabled    bool      `json:"bonus_enabled"`
+	BonusPercentage int       `json:"bonus_percentage"`
+	EnrolledCount   int       `json:"enrolled_count"`
 }
 
 // Render post-processes a ExamResponse.
@@ -39,33 +43,46 @@ func (body *ExamResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// newExamResponse creates a response from a course model.
-func (rs *ExamResource) newExamResponse(p *model.Exam) *ExamResponse {
+// newExamResponse creates a response from an exam model.
+func (rs *ExamResource) newExamResponse(p *model.Exam, counts map[int64]int) *ExamResponse {
+	count := 0
+	if counts != nil {
+		count = counts[p.ID]
+	} else if rs.Stores != nil && rs.Stores.Exam != nil {
+		count, _ = rs.Stores.Exam.GetEnrolledCount(p.ID)
+	}
 	return &ExamResponse{
-		ID:          p.ID,
-		Name:        p.Name,
-		Description: p.Description,
-		ExamTime:    p.ExamTime,
-		CourseID:    p.CourseID,
+		ID:              p.ID,
+		Name:            p.Name,
+		Description:     p.Description,
+		ExamTime:        p.ExamTime,
+		CourseID:        p.CourseID,
+		MaxPoints:       p.MaxPoints,
+		BonusEnabled:    p.BonusEnabled,
+		BonusPercentage: p.BonusPercentage,
+		EnrolledCount:   count,
 	}
 }
 
-// newExamListResponse creates a response from a list of course models.
-func (rs *ExamResource) newExamListResponse(courses []model.Exam) []render.Renderer {
+// newExamListResponse creates a response from a list of exam models.
+func (rs *ExamResource) newExamListResponse(exams []model.Exam, counts map[int64]int) []render.Renderer {
 	list := []render.Renderer{}
-	for k := range courses {
-		list = append(list, rs.newExamResponse(&courses[k]))
+	for k := range exams {
+		list = append(list, rs.newExamResponse(&exams[k], counts))
 	}
 	return list
 }
 
 // ExamEnrollmentResponse is the response payload for course management.
 type ExamEnrollmentResponse struct {
-	Status   int    `json:"status" example:"1"`
-	Mark     string `json:"mark" example:"1"`
-	UserID   int64  `json:"user_id" example:"42"`
-	CourseID int64  `json:"course_id" example:"1"`
-	ExamID   int64  `json:"exam_id" example:"1"`
+	Status      int    `json:"status" example:"1"`
+	Mark        string `json:"mark" example:"1"`
+	UserID      int64  `json:"user_id" example:"42"`
+	CourseID    int64  `json:"course_id" example:"1"`
+	ExamID      int64  `json:"exam_id" example:"1"`
+	ExamPoints  int    `json:"exam_points"`
+	BonusPoints int    `json:"bonus_points"`
+	RawMark     string `json:"raw_mark"`
 }
 
 // Render post-processes a ExamEnrollmentResponse.
@@ -77,11 +94,14 @@ func (body *ExamEnrollmentResponse) Render(w http.ResponseWriter, r *http.Reques
 func newExamEnrollmentResponse(p *model.UserExam) *ExamEnrollmentResponse {
 
 	return &ExamEnrollmentResponse{
-		Status:   p.Status,
-		Mark:     p.Mark,
-		UserID:   p.UserID,
-		CourseID: p.CourseID,
-		ExamID:   p.ExamID,
+		Status:      p.Status,
+		Mark:        p.Mark,
+		UserID:      p.UserID,
+		CourseID:    p.CourseID,
+		ExamID:      p.ExamID,
+		ExamPoints:  p.ExamPoints,
+		BonusPoints: p.BonusPoints,
+		RawMark:     p.RawMark,
 	}
 }
 

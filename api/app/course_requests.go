@@ -34,6 +34,7 @@ type CourseRequest struct {
 	BeginsAt           time.Time `json:"begins_at" example:"auto"`
 	EndsAt             time.Time `json:"ends_at" example:"auto"`
 	RequiredPercentage int       `json:"required_percentage" example:"80"`
+	BonusMode          int       `json:"bonus_mode"`
 }
 
 // Bind preprocesses a CourseRequest.

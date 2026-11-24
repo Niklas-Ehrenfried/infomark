@@ -246,8 +246,9 @@ type AchievementInfo struct {
 // GradeOverviewResponse captures the summary for all grades over all sheets
 // for a subset of users.
 type GradeOverviewResponse struct {
-	Sheets       []SheetInfo       `json:"sheets" example:""`
-	Achievements []AchievementInfo `json:"achievements" example:""`
+	Sheets         []SheetInfo       `json:"sheets" example:""`
+	Achievements   []AchievementInfo `json:"achievements" example:""`
+	TotalMaxPoints int               `json:"total_max_points"`
 }
 
 // newGradeOverviewResponse creates a response from a Material model.

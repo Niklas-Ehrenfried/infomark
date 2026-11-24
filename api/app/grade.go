@@ -374,8 +374,11 @@ func (rs *GradeResource) IndexSummaryHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	overview := newGradeOverviewResponse(grades, sheets, givenRole)
+	overview.TotalMaxPoints, _ = rs.Stores.Course.TotalMaxPointsOfCourse(course.ID)
+
 	// render JSON response
-	if err = render.Render(w, r, newGradeOverviewResponse(grades, sheets, givenRole)); err != nil {
+	if err = render.Render(w, r, overview); err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
 	}

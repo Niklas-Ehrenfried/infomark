@@ -229,6 +229,8 @@ func TestExam(t *testing.T) {
 			// remove all enrollments from student
 			_, err := tape.DB.Exec("DELETE FROM user_exam WHERE user_id = 112;")
 			g.Assert(err).Equal(nil)
+			_, err = tape.DB.Exec("UPDATE courses SET required_percentage = 0 WHERE id = 1;")
+			g.Assert(err).Equal(nil)
 
 			examsBefore, err := stores.Exam.GetEnrollmentsOfUser(studentJWT.Claims.LoginID)
 			g.Assert(err).Equal(nil)
@@ -247,10 +249,17 @@ func TestExam(t *testing.T) {
 			g.Assert(err).Equal(nil)
 			g.Assert(len(examsAfter)).Equal(1)
 
+			// Verify admission gate rejects student below required_percentage
+			_, err = tape.DB.Exec("UPDATE courses SET required_percentage = 100 WHERE id = 1;")
+			g.Assert(err).Equal(nil)
+			w = tape.Post("/api/v1/courses/1/exams/2/enrollments", helper.H{}, studentJWT)
+			g.Assert(w.Code).Equal(http.StatusBadRequest)
 		})
 
 		g.It("Students should be able to disenroll from exam", func() {
-			// remove all enrollments from student
+			// Ensure exam_time is in the future so disenroll is permitted before deadline
+			_, err := tape.DB.Exec("UPDATE exams SET exam_time = NOW() + INTERVAL '7 days' WHERE id = 1;")
+			g.Assert(err).Equal(nil)
 
 			examsBefore, err := stores.Exam.GetEnrollmentsOfUser(studentJWT.Claims.LoginID)
 			g.Assert(err).Equal(nil)
@@ -269,6 +278,11 @@ func TestExam(t *testing.T) {
 			g.Assert(err).Equal(nil)
 			g.Assert(len(examsAfter)).Equal(len(examsBefore) - 1)
 
+			// Verify past exam_time blocks disenrolling
+			_, err = tape.DB.Exec("UPDATE exams SET exam_time = NOW() - INTERVAL '1 day' WHERE id = 2;")
+			g.Assert(err).Equal(nil)
+			w = tape.Delete("/api/v1/courses/1/exams/2/enrollments", studentJWT)
+			g.Assert(w.Code).Equal(http.StatusBadRequest)
 		})
 
 		g.It("Admins scan update mark and status", func() {
