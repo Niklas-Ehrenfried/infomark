@@ -156,6 +156,9 @@ const Courses = {
   
   getMissingGrades: (id: number) =>
     apiClient.get<MissingGrade[]>(`/courses/${id}/grades/missing`),
+
+  getGradedSubmissions: (id: number) =>
+    apiClient.get<MissingGrade[]>(`/courses/${id}/grades/graded`),
   
   getMissingTasks: (id: number) =>
     apiClient.get<any[]>(`/courses/${id}/tasks/missing`),
@@ -306,6 +309,9 @@ const Grades = {
   
   getSummary: (courseId: number, params?: { group_id?: number }) =>
     apiClient.get<GradeOverview>(`/courses/${courseId}/grades/summary`, params),
+
+  downloadSummaryCSV: (courseId: number, params?: { group_id?: number }) =>
+    apiClient.download(`/courses/${courseId}/grades/summary.csv`, `grades-course-${courseId}.csv`, params),
 };
 
 const Submissions = {

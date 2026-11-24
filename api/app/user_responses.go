@@ -55,6 +55,7 @@ func newUserResponse(p *model.User) *UserResponse {
 		Semester:      p.Semester,
 		Subject:       p.Subject,
 		Language:      p.Language,
+		Root:          p.Root,
 	}
 }
 

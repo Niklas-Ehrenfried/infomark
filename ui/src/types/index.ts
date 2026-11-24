@@ -258,6 +258,7 @@ export interface GradeOverviewAchievement {
 export interface GradeOverview {
   sheets: GradeOverviewSheet[];
   achievements: GradeOverviewAchievement[];
+  total_max_points?: number;
 }
 
 // Account Types

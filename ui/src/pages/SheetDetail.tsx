@@ -72,6 +72,7 @@ const SheetDetail: React.FC = () => {
   });
   const [form] = Form.useForm();
   const [isTutor, setIsTutor] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const cId = Number(courseId);
   const sId = Number(sheetId);
@@ -82,14 +83,18 @@ const SheetDetail: React.FC = () => {
       // Determine the caller's role in this course to decide between the
       // student submission UI and the tutor/admin authoring UI.
       let tutorish = false;
+      let adminish = false;
       try {
         const enrollments = await agent.Account.getEnrollments();
         const enrollment = enrollments.find((e) => e.course_id === cId);
         tutorish = enrollment ? enrollment.role >= 1 : false;
+        adminish = enrollment ? enrollment.role >= 2 : false;
       } catch {
         tutorish = false;
+        adminish = false;
       }
       setIsTutor(tutorish);
+      setIsAdmin(adminish);
 
       const [sheetData, tasksData] = await Promise.all([agent.Sheets.get(cId, sId), agent.Tasks.getAll(cId, sId)]);
       setSheet(sheetData);
@@ -105,19 +110,19 @@ const SheetDetail: React.FC = () => {
       }
       setPoints(pointsMap);
 
-      // Result grades in parallel (was an O(2N) serial loop before). A 404
-      // simply means "no submission yet" for that task, so failures are
-      // swallowed per task rather than failing the whole view.
-      const gradeEntries = await Promise.all(
-        tasksData.map(async (task) => {
-          try {
-            const grade = await agent.Tasks.getResult(cId, task.id);
-            return [task.id, grade] as const;
-          } catch {
-            return null;
-          }
-        }),
-      );
+      // Result grades in parallel for students only (staff don't have personal submissions).
+      const gradeEntries = tutorish
+        ? []
+        : await Promise.all(
+            tasksData.map(async (task) => {
+              try {
+                const grade = await agent.Tasks.getResult(cId, task.id);
+                return [task.id, grade] as const;
+              } catch {
+                return null;
+              }
+            }),
+          );
       const gradesMap = new Map<number, Grade>();
       gradeEntries.forEach((entry) => {
         if (entry) gradesMap.set(entry[0], entry[1]);
@@ -166,7 +171,8 @@ const SheetDetail: React.FC = () => {
 
   const handleDownloadOwn = async (taskId: number) => {
     try {
-      await agent.Tasks.downloadOwnSubmission(cId, taskId, `task-${taskId}-submission.zip`);
+      const sheetNameSlug = sheet?.name ? sheet.name.replace(/\s+/g, '_') : 'sheet';
+      await agent.Tasks.downloadOwnSubmission(cId, taskId, `${sheetNameSlug}_task_${taskId}_submission.zip`);
     } catch {
       message.error(t('messages.downloadFailed'));
     }
@@ -259,6 +265,12 @@ const SheetDetail: React.FC = () => {
 
               const testsFinished = grade?.public_execution_state === TEST_STATE_FINISHED;
               const testsPassed = grade?.public_test_status === TEST_STATUS_PASSED;
+              const noPublicTests =
+                !testsFinished &&
+                Boolean(
+                  grade?.public_test_log?.includes('No public dockerimage was specified') ||
+                    grade?.public_test_log?.includes('no unit tests for this task are available'),
+                );
 
               const studentActions = [
                 <Upload
@@ -306,7 +318,7 @@ const SheetDetail: React.FC = () => {
               ];
 
               return (
-                <List.Item actions={isTutor ? tutorActions : studentActions}>
+                <List.Item actions={isAdmin ? tutorActions : isTutor ? [] : studentActions}>
                   <List.Item.Meta
                     title={task.name}
                     description={
@@ -318,7 +330,7 @@ const SheetDetail: React.FC = () => {
                           {hasSubmission && (
                             <Tag color="blue">{t('task.submitted')}</Tag>
                           )}
-                          {grade && (
+                          {grade && !noPublicTests && (
                             <Tag
                               icon={
                                 !testsFinished ? <LoadingOutlined /> : testsPassed ? <CheckCircleOutlined /> : <CloseCircleOutlined />
@@ -422,7 +434,7 @@ const SheetDetail: React.FC = () => {
         )}
       </Drawer>
 
-      {isTutor && (
+      {isAdmin && (
         <FloatButton icon={<PlusOutlined />} type="primary" tooltip={t('sheet.addTask')} onClick={() => handleTaskModalOpen()} />
       )}
     </div>

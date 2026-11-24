@@ -56,7 +56,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={8}>
           <Card>
             <Statistic 
-              title={t('course.courses')} 
+              title={t('dashboard.myCourses', 'My Enrolled Courses')} 
               value={enrollments.length} 
               prefix={<BookOutlined />}
               valueStyle={{ color: '#A51E37' }}
@@ -66,7 +66,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={8}>
           <Card>
             <Statistic 
-              title={t('admin.student')} 
+              title={t('dashboard.coursesAsStudent', 'Courses as Student')} 
               value={enrollments.filter(e => e.role === 0).length}
               prefix={<TeamOutlined />}
               valueStyle={{ color: '#1890ff' }}
@@ -76,7 +76,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={8}>
           <Card>
             <Statistic 
-              title={t('group.tutor') + '/Admin'} 
+              title={t('dashboard.coursesAsStaff', 'Teaching (Tutor/Admin)')} 
               value={enrollments.filter(e => e.role > 0).length}
               prefix={<TrophyOutlined />}
               valueStyle={{ color: '#B4A069' }}

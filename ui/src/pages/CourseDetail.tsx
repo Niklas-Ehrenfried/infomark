@@ -101,8 +101,8 @@ const CourseDetail: React.FC = () => {
       setUserRole(myRole);
       setIsEnrolled(enrolled);
 
-      // Roster counts for the overview stats (tutor/admin can read enrollments).
-      if (enrolled && myRole >= ROLE_TUTOR) {
+      // Roster counts for the overview stats (tutor/admin/root can read enrollments).
+      if (role === 'root' || (enrolled && myRole >= ROLE_TUTOR)) {
         try {
           const enrollmentsData = await agent.Courses.getEnrollments(cId);
           setEnrollmentCount({
@@ -121,8 +121,8 @@ const CourseDetail: React.FC = () => {
         setPoints([]);
       }
 
-      // Tutors/admins additionally see the per-student matrix.
-      if (enrolled && myRole >= ROLE_TUTOR) {
+      // Tutors/admins/root additionally see the per-student matrix.
+      if (role === 'root' || (enrolled && myRole >= ROLE_TUTOR)) {
         try {
           setSummary(await agent.Grades.getSummary(cId));
         } catch {
@@ -134,7 +134,7 @@ const CourseDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [cId, t]);
+  }, [cId, t, role]);
 
   useEffect(() => {
     if (courseId) fetchData();
@@ -189,8 +189,8 @@ const CourseDetail: React.FC = () => {
   if (loading || !course) return <Skeleton active paragraph={{ rows: 8 }} />;
 
   const isAdmin = userRole >= ROLE_ADMIN || role === 'root';
-  const isTutor = userRole >= ROLE_TUTOR;
-  const isStudent = isEnrolled && userRole === 0;
+  const isTutor = isAdmin || (isEnrolled && userRole >= ROLE_TUTOR);
+  const isStudent = !isAdmin && isEnrolled && userRole === 0;
 
   // Course-wide progress from the logged-in user's own per-sheet points.
   const achievablePoints = points.reduce((sum, p) => sum + (p.max_points || 0), 0);
@@ -426,7 +426,7 @@ const CourseDetail: React.FC = () => {
         <TeamOutlined /> {t('course.enrollments')}
       </span>
     ),
-    children: <EnrollmentsPanel courseId={cId} canManage={isAdmin} />,
+    children: <EnrollmentsPanel courseId={cId} canManage={isAdmin} onRoleChanged={fetchData} />,
   };
 
   const pointsMatrixTab = {
@@ -437,31 +437,43 @@ const CourseDetail: React.FC = () => {
       </span>
     ),
     children: (
-      <Table
-        dataSource={summary?.achievements ?? []}
-        rowKey={(record) => record.user_info.id}
-        scroll={{ x: 'max-content' }}
-        columns={[
-          {
-            title: t('grades.student'),
-            key: 'student',
-            fixed: 'left' as const,
-            render: (_, record) => `${record.user_info.first_name} ${record.user_info.last_name}`,
-          },
-          ...(summary?.sheets ?? []).map((sheet, index) => ({
-            title: sheet.name,
-            key: `sheet-${sheet.id}`,
-            render: (_: unknown, record: GradeOverview['achievements'][number]) => record.points[index] ?? 0,
-          })),
-          {
-            title: t('grades.totalPoints'),
-            key: 'total',
-            render: (_: unknown, record: GradeOverview['achievements'][number]) => (
-              <Tag color="green">{record.points.reduce((sum, value) => sum + value, 0)}</Tag>
-            ),
-          },
-        ]}
-      />
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {isAdmin && (
+          <Flex justify="flex-end">
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => agent.Grades.downloadSummaryCSV(cId)}
+            >
+              {t('grades.exportCSV')}
+            </Button>
+          </Flex>
+        )}
+        <Table
+          dataSource={summary?.achievements ?? []}
+          rowKey={(record) => record.user_info.id}
+          scroll={{ x: 'max-content' }}
+          columns={[
+            {
+              title: t('grades.student'),
+              key: 'student',
+              fixed: 'left' as const,
+              render: (_, record) => `${record.user_info.first_name} ${record.user_info.last_name}`,
+            },
+            ...(summary?.sheets ?? []).map((sheet, index) => ({
+              title: sheet.name,
+              key: `sheet-${sheet.id}`,
+              render: (_: unknown, record: GradeOverview['achievements'][number]) => record.points[index] ?? 0,
+            })),
+            {
+              title: t('grades.totalPoints'),
+              key: 'total',
+              render: (_: unknown, record: GradeOverview['achievements'][number]) => (
+                <Tag color="green">{record.points.reduce((sum, value) => sum + value, 0)}</Tag>
+              ),
+            },
+          ]}
+        />
+      </Space>
     ),
   };
 

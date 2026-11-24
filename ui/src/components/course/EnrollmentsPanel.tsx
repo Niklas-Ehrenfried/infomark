@@ -10,6 +10,7 @@ interface EnrollmentsPanelProps {
   // Only admins (and root) may change a user's course role; tutors get a
   // read-only roster.
   canManage: boolean;
+  onRoleChanged?: () => void;
 }
 
 const ROLE_STUDENT = 0;
@@ -19,7 +20,7 @@ const ROLE_ADMIN = 2;
 // EnrollmentsPanel is the course roster for tutors/admins: searchable, role
 // filterable, and (for admins) able to promote/demote a member via
 // PUT /courses/{id}/enrollments/{user_id}.
-export const EnrollmentsPanel: React.FC<EnrollmentsPanelProps> = ({ courseId, canManage }) => {
+export const EnrollmentsPanel: React.FC<EnrollmentsPanelProps> = ({ courseId, canManage, onRoleChanged }) => {
   const { t } = useTranslation();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,7 @@ export const EnrollmentsPanel: React.FC<EnrollmentsPanelProps> = ({ courseId, ca
       await agent.Courses.changeRole(courseId, userId, role);
       message.success(t('enrollment.roleChanged'));
       await fetchData();
+      onRoleChanged?.();
     } catch {
       message.error(t('messages.updateFailed'));
     }

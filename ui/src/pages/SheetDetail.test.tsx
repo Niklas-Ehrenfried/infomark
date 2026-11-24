@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
-const { get, getAll, getPoints, getResult } = vi.hoisted(() => ({
+const { get, getCourse, getAll, getPoints, getResult } = vi.hoisted(() => ({
   get: vi.fn(),
+  getCourse: vi.fn(),
   getAll: vi.fn(),
   getPoints: vi.fn(),
   getResult: vi.fn(),
@@ -14,6 +15,9 @@ const { get, getAll, getPoints, getResult } = vi.hoisted(() => ({
 vi.mock('@/api/agent', () => ({
   default: {
     Account: { getEnrollments: () => Promise.resolve([{ id: 0, course_id: 1, role: 0 }]) },
+    Courses: {
+      get: getCourse,
+    },
     Sheets: {
       get,
       getPoints,
@@ -32,6 +36,7 @@ import SheetDetail from '@/pages/SheetDetail';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getCourse.mockResolvedValue({ id: 1, name: 'Test Course', teams_enabled: false });
   // Published in the past, due in the future -> submission enabled.
   get.mockResolvedValue({
     id: 1,

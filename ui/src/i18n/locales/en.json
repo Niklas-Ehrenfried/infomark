@@ -216,7 +216,17 @@
     "lastUpdated": "Last updated",
     "passed": "Passed",
     "failed": "Failed",
-    "pointsRequired": "Please enter the acquired points"
+    "pointsRequired": "Please enter the acquired points",
+    "exportCSV": "Export CSV",
+    "needsReview": "Needs Review",
+    "gradedSubmissions": "Graded Submissions",
+    "score": "Score",
+    "gradedAt": "Graded At",
+    "amendGrade": "Amend Grade",
+    "filterBySheet": "Filter by Sheet",
+    "allSheets": "All Sheets",
+    "taskId": "Task ID",
+    "noGradedSubmissions": "No graded submissions found."
   },
   "exam": {
     "exam": "Exam",
@@ -336,6 +346,8 @@
   "dashboard": {
     "welcome": "Welcome",
     "myCourses": "My Courses",
+    "coursesAsStudent": "Courses as Student",
+    "coursesAsStaff": "Teaching (Tutor/Admin)",
     "noCourses": "You are not enrolled in any courses yet"
   },
   "messages": {

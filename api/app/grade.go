@@ -21,6 +21,7 @@ package app
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"net/http"
@@ -374,8 +375,11 @@ func (rs *GradeResource) IndexSummaryHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	overview := newGradeOverviewResponse(grades, sheets, givenRole)
+	overview.TotalMaxPoints, _ = rs.Stores.Course.TotalMaxPointsOfCourse(course.ID)
+
 	// render JSON response
-	if err = render.Render(w, r, newGradeOverviewResponse(grades, sheets, givenRole)); err != nil {
+	if err = render.Render(w, r, overview); err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
 	}
@@ -398,10 +402,16 @@ func (rs *GradeResource) IndexSummaryHandler(w http.ResponseWriter, r *http.Requ
 func (rs *GradeResource) IndexMissingHandler(w http.ResponseWriter, r *http.Request) {
 	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
 	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
 
 	filterGroupID := helper.Int64FromURL(r, "group_id", 0)
 
-	grades, err := rs.Stores.Grade.GetAllMissingGrades(course.ID, accessClaims.LoginID, filterGroupID)
+	tutorID := accessClaims.LoginID
+	if givenRole == authorize.ADMIN {
+		tutorID = 0
+	}
+
+	grades, err := rs.Stores.Grade.GetAllMissingGrades(course.ID, tutorID, filterGroupID)
 	if err != nil {
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
@@ -415,6 +425,113 @@ func (rs *GradeResource) IndexMissingHandler(w http.ResponseWriter, r *http.Requ
 
 	render.Status(r, http.StatusOK)
 
+}
+
+// IndexGradedHandler lists graded submissions for a course.
+// URL: /courses/{course_id}/grades/graded
+// URLPARAM: course_id,integer
+// QUERYPARAM: group_id,integer
+// METHOD: get
+// TAG: grades
+// RESPONSE: 200,MissingGradeResponseList
+func (rs *GradeResource) IndexGradedHandler(w http.ResponseWriter, r *http.Request) {
+	accessClaims := r.Context().Value(symbol.CtxKeyAccessClaims).(*authenticate.AccessClaims)
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+
+	filterGroupID := helper.Int64FromURL(r, "group_id", 0)
+
+	tutorID := accessClaims.LoginID
+	if givenRole == authorize.ADMIN {
+		tutorID = 0
+	}
+
+	grades, err := rs.Stores.Grade.GetAllGradedSubmissions(course.ID, tutorID, filterGroupID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	if err = render.RenderList(w, r, newMissingGradeListResponse(grades)); err != nil {
+		_ = render.Render(w, r, ErrRender(err))
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+}
+
+// sanitizeCSVCell guards against CSV/spreadsheet formula injection (OWASP).
+func sanitizeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	default:
+		return s
+	}
+}
+
+// SummaryCSVHandler exports grade overview as CSV.
+// URL: /courses/{course_id}/grades/summary.csv
+// URLPARAM: course_id,integer
+// QUERYPARAM: group_id,integer
+// METHOD: get
+// TAG: grades
+// RESPONSE: 200,CSVFile
+// RESPONSE: 400,BadRequest
+// RESPONSE: 401,Unauthenticated
+// RESPONSE: 403,Unauthorized
+// SUMMARY: Export grades summary as CSV file
+func (rs *GradeResource) SummaryCSVHandler(w http.ResponseWriter, r *http.Request) {
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	filterGroupID := helper.Int64FromURL(r, "group_id", 0)
+	givenRole := r.Context().Value(symbol.CtxKeyCourseRole).(authorize.CourseRole)
+
+	grades, err := rs.Stores.Grade.GetOverviewGrades(course.ID, filterGroupID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	sheets, err := rs.Stores.Sheet.SheetsOfCourse(course.ID)
+	if err != nil {
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		return
+	}
+
+	overview := newGradeOverviewResponse(grades, sheets, givenRole)
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"grades-course-%d.csv\"", course.ID))
+
+	csvWriter := csv.NewWriter(w)
+
+	header := []string{"Matriculation Number", "First Name", "Last Name", "Email"}
+	for _, s := range overview.Sheets {
+		header = append(header, sanitizeCSVCell(s.Name))
+	}
+	header = append(header, "Total")
+	_ = csvWriter.Write(header)
+
+	for _, ach := range overview.Achievements {
+		row := []string{
+			sanitizeCSVCell(ach.User.StudentNumber),
+			sanitizeCSVCell(ach.User.FirstName),
+			sanitizeCSVCell(ach.User.LastName),
+			sanitizeCSVCell(ach.User.Email),
+		}
+		total := 0
+		for _, p := range ach.Points {
+			row = append(row, strconv.Itoa(p))
+			total += p
+		}
+		row = append(row, strconv.Itoa(total))
+		_ = csvWriter.Write(row)
+	}
+
+	csvWriter.Flush()
 }
 
 // .............................................................................

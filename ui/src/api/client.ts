@@ -113,9 +113,10 @@ class ApiClient {
   }
 
   // File download
-  async download(url: string, filename: string): Promise<void> {
+  async download(url: string, filename: string, params?: any): Promise<void> {
     const response = await this.client.get(url, {
       responseType: 'blob',
+      params,
     });
     
     const blob = new Blob([response.data]);

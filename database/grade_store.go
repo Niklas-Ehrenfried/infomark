@@ -20,6 +20,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/infomark-org/infomark/model"
 	"github.com/infomark-org/infomark/symbol"
 	"github.com/jmoiron/sqlx"
@@ -145,8 +147,8 @@ ORDER BY
 func (s *GradeStore) GetAllMissingGrades(courseID int64, tutorID int64, groupID int64) ([]model.MissingGrade, error) {
 	p := []model.MissingGrade{}
 
-	err := s.db.Select(&p,
-		`
+	args := []interface{}{courseID}
+	query := `
 SELECT
   g.*,
   ts.task_id,
@@ -162,14 +164,66 @@ INNER JOIN submissions s ON s.id = g.submission_id
 INNER JOIN task_sheet ts ON ts.task_id = s.task_id
 INNER JOIN sheet_course sg ON sg.sheet_id = ts.sheet_id
 INNER JOIN users u ON s.user_id = u.id
-INNER JOIN user_group ug ON ug.user_id = u.id
+LEFT JOIN user_group ug ON ug.user_id = u.id AND ug.group_id IN (SELECT id FROM groups WHERE course_id = $1)
 WHERE
-  g.feedback like '' and g.tutor_id = $1
-AND
-  sg.course_id = $2
-AND
-  ($3 = 0 OR ug.group_id = $3)
-  `, tutorID, courseID, groupID)
+  g.feedback like ''
+  AND g.acquired_points = 0
+  AND sg.course_id = $1
+`
+	argIdx := 2
+	if tutorID > 0 {
+		query += fmt.Sprintf(` AND g.tutor_id = $%d`, argIdx)
+		args = append(args, tutorID)
+		argIdx++
+	}
+	if groupID > 0 {
+		query += fmt.Sprintf(` AND ug.group_id = $%d`, argIdx)
+		args = append(args, groupID)
+	}
+	query += ` ORDER BY g.updated_at DESC;`
+
+	err := s.db.Select(&p, query, args...)
+	return p, err
+}
+
+func (s *GradeStore) GetAllGradedSubmissions(courseID int64, tutorID int64, groupID int64) ([]model.MissingGrade, error) {
+	p := []model.MissingGrade{}
+
+	args := []interface{}{courseID}
+	query := `
+SELECT
+  g.*,
+  ts.task_id,
+  ts.sheet_id,
+  sg.course_id,
+  s.user_id,
+  u.last_name user_last_name,
+  u.first_name user_first_name,
+  u.email user_email
+FROM
+  grades g
+INNER JOIN submissions s ON s.id = g.submission_id
+INNER JOIN task_sheet ts ON ts.task_id = s.task_id
+INNER JOIN sheet_course sg ON sg.sheet_id = ts.sheet_id
+INNER JOIN users u ON s.user_id = u.id
+LEFT JOIN user_group ug ON ug.user_id = u.id AND ug.group_id IN (SELECT id FROM groups WHERE course_id = $1)
+WHERE
+  (g.feedback != '' OR g.acquired_points > 0)
+  AND sg.course_id = $1
+`
+	argIdx := 2
+	if tutorID > 0 {
+		query += fmt.Sprintf(` AND g.tutor_id = $%d`, argIdx)
+		args = append(args, tutorID)
+		argIdx++
+	}
+	if groupID > 0 {
+		query += fmt.Sprintf(` AND ug.group_id = $%d`, argIdx)
+		args = append(args, groupID)
+	}
+	query += ` ORDER BY g.updated_at DESC;`
+
+	err := s.db.Select(&p, query, args...)
 	return p, err
 }
 

@@ -83,6 +83,7 @@ type CourseStore interface {
 	PointsForUser(userID int64, courseID int64) ([]model.SheetPoints, error)
 	RoleInCourse(userID int64, courseID int64) (authorize.CourseRole, error)
 	UpdateRole(courseID, userID int64, role int) error
+	TotalMaxPointsOfCourse(courseID int64) (int, error)
 }
 
 // SheetStore specifies required database queries for Sheet management.
@@ -186,6 +187,7 @@ type GradeStore interface {
 	Update(p *model.Grade) error
 	IdentifyCourseOfGrade(gradeID int64) (*model.Course, error)
 	GetAllMissingGrades(courseID int64, tutorID int64, groupID int64) ([]model.MissingGrade, error)
+	GetAllGradedSubmissions(courseID int64, tutorID int64, groupID int64) ([]model.MissingGrade, error)
 	Create(p *model.Grade) (*model.Grade, error)
 
 	UpdatePrivateTestInfo(gradeID int64, log string, status symbol.TestingResult) error

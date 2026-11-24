@@ -378,7 +378,9 @@ func New(db *sqlx.DB, promhttp http.Handler, log bool) (*chi.Mux, error) {
 							r.Route("/grades", func(r chi.Router) {
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/", appAPI.Grade.IndexHandler)
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/summary", appAPI.Grade.IndexSummaryHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Get("/summary.csv", appAPI.Grade.SummaryCSVHandler)
 								r.Get("/missing", appAPI.Grade.IndexMissingHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/graded", appAPI.Grade.IndexGradedHandler)
 
 								r.Route("/{grade_id}", func(r chi.Router) {
 									r.Use(appAPI.Grade.Context)

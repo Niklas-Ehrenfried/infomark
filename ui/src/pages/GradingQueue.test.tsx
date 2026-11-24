@@ -4,10 +4,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
-const { getMissingGrades } = vi.hoisted(() => ({ getMissingGrades: vi.fn() }));
+const { getMissingGrades, getGradedSubmissions, getSheetsAll } = vi.hoisted(() => ({
+  getMissingGrades: vi.fn(),
+  getGradedSubmissions: vi.fn(),
+  getSheetsAll: vi.fn(),
+}));
 
 vi.mock('@/api/agent', () => ({
-  default: { Courses: { getMissingGrades } },
+  default: {
+    Courses: { getMissingGrades, getGradedSubmissions },
+    Sheets: { getAll: getSheetsAll },
+  },
 }));
 
 import '@/i18n';
@@ -15,6 +22,8 @@ import GradingQueue from '@/pages/GradingQueue';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getGradedSubmissions.mockResolvedValue([]);
+  getSheetsAll.mockResolvedValue([]);
   getMissingGrades.mockResolvedValue([
     {
       grade: {

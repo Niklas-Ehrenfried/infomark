@@ -216,7 +216,17 @@
     "lastUpdated": "Zuletzt aktualisiert",
     "passed": "Bestanden",
     "failed": "Fehlgeschlagen",
-    "pointsRequired": "Bitte erreichte Punkte eingeben"
+    "pointsRequired": "Bitte erreichte Punkte eingeben",
+    "exportCSV": "CSV exportieren",
+    "needsReview": "Noch zu bewerten",
+    "gradedSubmissions": "Bewertete Abgaben",
+    "score": "Punkte",
+    "gradedAt": "Bewertet am",
+    "amendGrade": "Bewertung ändern",
+    "filterBySheet": "Nach Übungsblatt filtern",
+    "allSheets": "Alle Übungsblätter",
+    "taskId": "Aufgaben-ID",
+    "noGradedSubmissions": "Keine bewerteten Abgaben gefunden."
   },
   "exam": {
     "exam": "Klausur",
@@ -336,6 +346,8 @@
   "dashboard": {
     "welcome": "Willkommen",
     "myCourses": "Meine Kurse",
+    "coursesAsStudent": "Kurse als Student",
+    "coursesAsStaff": "Lehre (Tutor/Admin)",
     "noCourses": "Sie sind noch in keinem Kurs eingeschrieben"
   },
   "messages": {
