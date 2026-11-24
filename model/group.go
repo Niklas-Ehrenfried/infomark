@@ -55,3 +55,11 @@ type GroupWithTutor struct {
 	TutorEmail     string      `db:"tutor_email"`
 	TutorLanguage  string      `db:"tutor_language"`
 }
+
+// AutoAssignResult represents the outcome metrics of an auto-assignment run.
+type AutoAssignResult struct {
+	AssignedCount   int     `json:"assigned_count"`
+	SolverUsed      string  `json:"solver_used"`
+	AvgSatisfaction float64 `json:"avg_satisfaction"`
+	TopChoicePct    float64 `json:"top_choice_pct"`
+}

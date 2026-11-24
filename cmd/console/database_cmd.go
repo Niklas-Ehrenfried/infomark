@@ -233,7 +233,7 @@ var DatabaseMigrateCmd = &cobra.Command{
 
 		db, err := sqlx.Connect("postgres", configuration.Configuration.Server.PostgresURL())
 		if err != nil {
-			log.WithField("module", "database").Error(err)
+			log.WithField("module", "database").Fatal(err)
 		}
 
 		migration.UpdateDatabase(db, log)

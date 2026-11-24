@@ -30,12 +30,19 @@ import (
 
 // CourseResponse is the response payload for course management.
 type CourseResponse struct {
-	ID                 int64     `json:"id" example:"1"`
-	Name               string    `json:"name" example:"Info2"`
-	Description        string    `json:"description" example:"Some course description here"`
-	BeginsAt           time.Time `json:"begins_at" example:"auto"`
-	EndsAt             time.Time `json:"ends_at" example:"auto"`
-	RequiredPercentage int       `json:"required_percentage" example:"80"`
+	ID                       int64     `json:"id" example:"1"`
+	Name                     string    `json:"name" example:"Info2"`
+	Description              string    `json:"description" example:"Some course description here"`
+	BeginsAt                 time.Time `json:"begins_at" example:"auto"`
+	EndsAt                   time.Time `json:"ends_at" example:"auto"`
+	RequiredPercentage       int       `json:"required_percentage" example:"80"`
+	TeamsEnabled             bool      `json:"teams_enabled"`
+	TeamFormationOpen        bool      `json:"team_formation_open"`
+	MaxTeamSize              int       `json:"max_team_size"`
+	EnforceSameExerciseGroup bool      `json:"enforce_same_exercise_group"`
+	BonusMode                int       `json:"bonus_mode"`
+	GroupSolver              string    `json:"group_solver"`
+	MinGroupPreferences      int       `json:"min_group_preferences"`
 }
 
 // Render post-processes a CourseResponse.
@@ -45,13 +52,29 @@ func (body *CourseResponse) Render(w http.ResponseWriter, r *http.Request) error
 
 // newCourseResponse creates a response from a course model.
 func (rs *CourseResource) newCourseResponse(p *model.Course) *CourseResponse {
+	groupSolver := p.GroupSolver
+	if groupSolver == "" {
+		groupSolver = "optimal"
+	}
+	minPreferences := p.MinGroupPreferences
+	if minPreferences <= 0 {
+		minPreferences = 3
+	}
+
 	return &CourseResponse{
-		ID:                 p.ID,
-		Name:               p.Name,
-		Description:        p.Description,
-		BeginsAt:           p.BeginsAt,
-		EndsAt:             p.EndsAt,
-		RequiredPercentage: p.RequiredPercentage,
+		ID:                       p.ID,
+		Name:                     p.Name,
+		Description:              p.Description,
+		BeginsAt:                 p.BeginsAt,
+		EndsAt:                   p.EndsAt,
+		RequiredPercentage:       p.RequiredPercentage,
+		TeamsEnabled:             p.TeamsEnabled,
+		TeamFormationOpen:        p.TeamFormationOpen,
+		MaxTeamSize:              p.MaxTeamSize,
+		EnforceSameExerciseGroup: p.EnforceSameExerciseGroup,
+		BonusMode:                p.BonusMode,
+		GroupSolver:              groupSolver,
+		MinGroupPreferences:      minPreferences,
 	}
 }
 

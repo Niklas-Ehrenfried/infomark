@@ -63,6 +63,18 @@ func ErrBadRequestWithDetails(err error) *ErrResponse {
 	}
 }
 
+// ErrConflictWithDetails returns status 409 Conflict with an application code and error message.
+func ErrConflictWithDetails(code int64, errText string) *ErrResponse {
+	return &ErrResponse{
+		HTTPStatusCode: http.StatusConflict,
+		StatusText:     http.StatusText(http.StatusConflict),
+		AppCode:        code,
+		ErrorText:      errText,
+	}
+}
+
+const CodeFinalSubmissionExists = 4091
+
 // ErrInternalServerErrorWithDetails returns status 500 with a text
 func ErrInternalServerErrorWithDetails(err error) *ErrResponse {
 	return &ErrResponse{

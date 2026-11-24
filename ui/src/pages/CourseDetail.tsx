@@ -20,6 +20,7 @@ import {
   FloatButton,
   Skeleton,
   Empty,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -49,6 +50,8 @@ import { useTranslation } from 'react-i18next';
 import { ExamsPanel } from '@/components/course/ExamsPanel';
 import { GroupsPanel } from '@/components/course/GroupsPanel';
 import { EnrollmentsPanel } from '@/components/course/EnrollmentsPanel';
+import { TeamPanel } from '@/components/course/TeamPanel';
+import { TeamsRosterPanel } from '@/components/course/TeamsRosterPanel';
 
 const ROLE_TUTOR = 1;
 const ROLE_ADMIN = 2;
@@ -101,8 +104,8 @@ const CourseDetail: React.FC = () => {
       setUserRole(myRole);
       setIsEnrolled(enrolled);
 
-      // Roster counts for the overview stats (tutor/admin can read enrollments).
-      if (enrolled && myRole >= ROLE_TUTOR) {
+      // Roster counts for the overview stats (tutor/admin/root can read enrollments).
+      if (role === 'root' || (enrolled && myRole >= ROLE_TUTOR)) {
         try {
           const enrollmentsData = await agent.Courses.getEnrollments(cId);
           setEnrollmentCount({
@@ -121,8 +124,8 @@ const CourseDetail: React.FC = () => {
         setPoints([]);
       }
 
-      // Tutors/admins additionally see the per-student matrix.
-      if (enrolled && myRole >= ROLE_TUTOR) {
+      // Tutors/admins/root additionally see the per-student matrix.
+      if (role === 'root' || (enrolled && myRole >= ROLE_TUTOR)) {
         try {
           setSummary(await agent.Grades.getSummary(cId));
         } catch {
@@ -134,7 +137,7 @@ const CourseDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [cId, t]);
+  }, [cId, t, role]);
 
   useEffect(() => {
     if (courseId) fetchData();
@@ -189,8 +192,8 @@ const CourseDetail: React.FC = () => {
   if (loading || !course) return <Skeleton active paragraph={{ rows: 8 }} />;
 
   const isAdmin = userRole >= ROLE_ADMIN || role === 'root';
-  const isTutor = userRole >= ROLE_TUTOR;
-  const isStudent = isEnrolled && userRole === 0;
+  const isTutor = isAdmin || (isEnrolled && userRole >= ROLE_TUTOR);
+  const isStudent = !isAdmin && isEnrolled && userRole === 0;
 
   // Course-wide progress from the logged-in user's own per-sheet points.
   const achievablePoints = points.reduce((sum, p) => sum + (p.max_points || 0), 0);
@@ -198,6 +201,22 @@ const CourseDetail: React.FC = () => {
   const achievedPoints = points.reduce((sum, p) => sum + (p.acquired_points || 0), 0);
   const achievedPercent = achievablePoints > 0 ? Math.round((achievedPoints / achievablePoints) * 100) : 0;
   const requiredPercent = achievablePoints > 0 ? Math.round((requiredPoints / achievablePoints) * 100) : 0;
+
+  const studentCount =
+    (summary?.achievements?.length ?? 0) > 0
+      ? (summary?.achievements?.length ?? 0)
+      : (enrollmentCount.students || 1);
+  const classTotalAchieved = (summary?.achievements ?? []).reduce(
+    (total, a) => total + a.points.reduce((s, p) => s + p, 0),
+    0
+  );
+  const classTotalAchievable = studentCount * achievablePoints;
+  const classAvgPercent =
+    classTotalAchievable > 0
+      ? Math.round((classTotalAchieved / classTotalAchievable) * 100)
+      : 0;
+  const classAvgPoints =
+    studentCount > 0 ? Math.round(classTotalAchieved / studentCount) : 0;
 
   // Map sheet_id -> points for the per-sheet progress bars in the sheets list.
   const pointsBySheet = new Map(points.map((p) => [p.sheet_id, p]));
@@ -339,14 +358,69 @@ const CourseDetail: React.FC = () => {
       ),
   };
 
-  const groupsTab = {
-    key: 'groups',
+  const groupsAndTeamsTab = {
+    key: 'groups_teams',
     label: (
       <span>
-        <TeamOutlined /> {t('course.groups')}
+        <TeamOutlined /> {course?.teams_enabled ? t('course.groupsAndTeams') : t('course.groups')}
       </span>
     ),
-    children: (
+    children: isStudent ? (
+      <Space direction="vertical" style={{ width: '100%' }} size="large">
+        <GroupsPanel
+          courseId={cId}
+          isStudent={isStudent}
+          isTutor={isTutor}
+          canManage={isAdmin}
+          onEdit={(groupId) => navigate(`/courses/${courseId}/groups/${groupId}/edit`)}
+          onDelete={handleDeleteGroup}
+        />
+        {course?.teams_enabled && (
+          <div>
+            <Divider orientation="left">
+              <Space>
+                <TeamOutlined />
+                <span>{t('team.myTeam')}</span>
+              </Space>
+            </Divider>
+            <TeamPanel courseId={cId} course={course} />
+          </div>
+        )}
+      </Space>
+    ) : course?.teams_enabled ? (
+      <Tabs
+        defaultActiveKey="groups"
+        items={[
+          {
+            key: 'groups',
+            label: (
+              <span>
+                <TeamOutlined /> {t('course.groups')}
+              </span>
+            ),
+            children: (
+              <GroupsPanel
+                courseId={cId}
+                isStudent={isStudent}
+                isTutor={isTutor}
+                canManage={isAdmin}
+                onEdit={(groupId) => navigate(`/courses/${courseId}/groups/${groupId}/edit`)}
+                onDelete={handleDeleteGroup}
+              />
+            ),
+          },
+          {
+            key: 'teams_roster',
+            label: (
+              <span>
+                <TeamOutlined /> {t('team.teamsTab')}
+              </span>
+            ),
+            children: <TeamsRosterPanel courseId={cId} course={course} canManage={isTutor} isAdmin={isAdmin} />,
+          },
+        ]}
+      />
+    ) : (
       <GroupsPanel
         courseId={cId}
         isStudent={isStudent}
@@ -365,7 +439,15 @@ const CourseDetail: React.FC = () => {
         <CheckSquareOutlined /> {t('course.exams')}
       </span>
     ),
-    children: <ExamsPanel courseId={cId} isStudent={isStudent} />,
+    children: (
+      <ExamsPanel
+        courseId={cId}
+        isStudent={isStudent}
+        canManage={isAdmin}
+        course={course}
+        studentPoints={points}
+      />
+    ),
   };
 
   // Student's own per-sheet grades table.
@@ -426,7 +508,7 @@ const CourseDetail: React.FC = () => {
         <TeamOutlined /> {t('course.enrollments')}
       </span>
     ),
-    children: <EnrollmentsPanel courseId={cId} canManage={isAdmin} />,
+    children: <EnrollmentsPanel courseId={cId} canManage={isAdmin} onRoleChanged={fetchData} />,
   };
 
   const pointsMatrixTab = {
@@ -437,31 +519,43 @@ const CourseDetail: React.FC = () => {
       </span>
     ),
     children: (
-      <Table
-        dataSource={summary?.achievements ?? []}
-        rowKey={(record) => record.user_info.id}
-        scroll={{ x: 'max-content' }}
-        columns={[
-          {
-            title: t('grades.student'),
-            key: 'student',
-            fixed: 'left' as const,
-            render: (_, record) => `${record.user_info.first_name} ${record.user_info.last_name}`,
-          },
-          ...(summary?.sheets ?? []).map((sheet, index) => ({
-            title: sheet.name,
-            key: `sheet-${sheet.id}`,
-            render: (_: unknown, record: GradeOverview['achievements'][number]) => record.points[index] ?? 0,
-          })),
-          {
-            title: t('grades.totalPoints'),
-            key: 'total',
-            render: (_: unknown, record: GradeOverview['achievements'][number]) => (
-              <Tag color="green">{record.points.reduce((sum, value) => sum + value, 0)}</Tag>
-            ),
-          },
-        ]}
-      />
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {isAdmin && (
+          <Flex justify="flex-end">
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => agent.Grades.downloadSummaryCSV(cId)}
+            >
+              {t('grades.exportCSV')}
+            </Button>
+          </Flex>
+        )}
+        <Table
+          dataSource={summary?.achievements ?? []}
+          rowKey={(record) => record.user_info.id}
+          scroll={{ x: 'max-content' }}
+          columns={[
+            {
+              title: t('grades.student'),
+              key: 'student',
+              fixed: 'left' as const,
+              render: (_, record) => `${record.user_info.first_name} ${record.user_info.last_name}`,
+            },
+            ...(summary?.sheets ?? []).map((sheet, index) => ({
+              title: sheet.name,
+              key: `sheet-${sheet.id}`,
+              render: (_: unknown, record: GradeOverview['achievements'][number]) => record.points[index] ?? 0,
+            })),
+            {
+              title: t('grades.totalPoints'),
+              key: 'total',
+              render: (_: unknown, record: GradeOverview['achievements'][number]) => (
+                <Tag color="green">{record.points.reduce((sum, value) => sum + value, 0)}</Tag>
+              ),
+            },
+          ]}
+        />
+      </Space>
     ),
   };
 
@@ -470,7 +564,7 @@ const CourseDetail: React.FC = () => {
   const tabItems = [
     sheetsTab,
     materialsTab,
-    groupsTab,
+    groupsAndTeamsTab,
     examsTab,
     ...(isStudent ? [gradesTab] : []),
     ...(isTutor ? [enrollmentsTab, pointsMatrixTab] : []),
@@ -518,13 +612,25 @@ const CourseDetail: React.FC = () => {
             <Descriptions.Item label={t('course.endDate')}>{dayjs(course.ends_at).format('MMM D, YYYY')}</Descriptions.Item>
             <Descriptions.Item label={t('course.requiredPercentage')}>{course.required_percentage}%</Descriptions.Item>
           </Descriptions>
-          {isEnrolled && (
-            <Tooltip title={`${achievedPoints} / ${requiredPoints} / ${achievablePoints}`}>
+          {isStudent && (
+            <Tooltip title={`My Points: ${achievedPoints} / ${requiredPoints} (Pass threshold) / ${achievablePoints} max`}>
               <Progress
                 type="dashboard"
                 percent={achievedPercent}
                 success={{ percent: requiredPercent }}
                 format={() => `${achievedPoints}/${achievablePoints}`}
+              />
+            </Tooltip>
+          )}
+          {isTutor && (
+            <Tooltip
+              title={`Tutorial / Class Average: ${classAvgPoints} / ${achievablePoints} pts (${classAvgPercent}%) | Total Achieved: ${classTotalAchieved} / ${classTotalAchievable} pts | Required: ${course.required_percentage}%`}
+            >
+              <Progress
+                type="dashboard"
+                percent={classAvgPercent}
+                success={{ percent: requiredPercent }}
+                format={() => `${classAvgPercent}%`}
               />
             </Tooltip>
           )}

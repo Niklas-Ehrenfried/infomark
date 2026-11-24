@@ -29,9 +29,12 @@ import (
 
 // ExamRequest is the request payload for exam management.
 type ExamRequest struct {
-	Name        string    `json:"name" example:"Info 2"`
-	Description string    `json:"description" example:"An example exam."`
-	ExamTime    time.Time `json:"exam_time" example:"auto"`
+	Name            string    `json:"name" example:"Info 2"`
+	Description     string    `json:"description" example:"An example exam."`
+	ExamTime        time.Time `json:"exam_time" example:"auto"`
+	MaxPoints       int       `json:"max_points"`
+	BonusEnabled    bool      `json:"bonus_enabled"`
+	BonusPercentage int       `json:"bonus_percentage"`
 }
 
 // Bind preprocesses a ExamRequest.
@@ -61,9 +64,12 @@ func (body *ExamRequest) Validate() error {
 
 // ExamRequest is the request payload for exam management.
 type UserExamRequest struct {
-	Status int    `json:"status" example:"1"`
-	Mark   string `json:"mark" example:"1"`
-	UserID int64  `json:"user_id" example:"42"`
+	Status      int    `json:"status" example:"1"`
+	Mark        string `json:"mark" example:"1"`
+	UserID      int64  `json:"user_id" example:"42"`
+	ExamPoints  int    `json:"exam_points"`
+	BonusPoints int    `json:"bonus_points"`
+	RawMark     string `json:"raw_mark"`
 }
 
 // Bind preprocesses a ExamRequest.

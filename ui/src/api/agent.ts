@@ -30,6 +30,14 @@ import type {
   TaskRatingResponse,
   PaginationParams,
   FilterParams,
+  Team,
+  TeamRosterMember,
+  JoinTeamRequest,
+  MoveTeamMemberRequest,
+  SplitTeamMemberRequest,
+  CreateCustomTeamRequest,
+  GradeOverrideItem,
+  AutoAssignResult,
 } from '@/types';
 
 const Auth = {
@@ -156,6 +164,9 @@ const Courses = {
   
   getMissingGrades: (id: number) =>
     apiClient.get<MissingGrade[]>(`/courses/${id}/grades/missing`),
+
+  getGradedSubmissions: (id: number) =>
+    apiClient.get<MissingGrade[]>(`/courses/${id}/grades/graded`),
   
   getMissingTasks: (id: number) =>
     apiClient.get<any[]>(`/courses/${id}/tasks/missing`),
@@ -218,8 +229,8 @@ const Tasks = {
   downloadOwnSubmission: (courseId: number, taskId: number, filename: string) =>
     apiClient.download(`/courses/${courseId}/tasks/${taskId}/submission`, filename),
 
-  submitTask: (courseId: number, taskId: number, file: File) =>
-    apiClient.upload<void>(`/courses/${courseId}/tasks/${taskId}/submission`, file),
+  submitTask: (courseId: number, taskId: number, file: File, options?: { is_final?: boolean; force_overwrite?: boolean }) =>
+    apiClient.upload<void>(`/courses/${courseId}/tasks/${taskId}/submission`, file, options),
   
   getResult: (courseId: number, taskId: number) =>
     apiClient.get<Grade>(`/courses/${courseId}/tasks/${taskId}/result`),
@@ -287,6 +298,15 @@ const Groups = {
   placeBid: (courseId: number, groupId: number, bid: number) =>
     apiClient.post<void>(`/courses/${courseId}/groups/${groupId}/bids`, { bid }),
   
+  submitBids: (courseId: number, bids: { group_id: number; bid: number }[]) =>
+    apiClient.post<void>(`/courses/${courseId}/groups/bids`, { bids }),
+
+  autoAssign: (courseId: number, solver?: string) =>
+    apiClient.post<AutoAssignResult>(`/courses/${courseId}/groups/auto-assign`, { solver }),
+  
+  resetAssignments: (courseId: number) =>
+    apiClient.post<{ status: string }>(`/courses/${courseId}/groups/reset-assignments`),
+  
   sendEmail: (courseId: number, groupId: number, mail: Mail) =>
     apiClient.post<void>(`/courses/${courseId}/groups/${groupId}/emails`, mail),
   
@@ -301,11 +321,14 @@ const Grades = {
   get: (courseId: number, gradeId: number) =>
     apiClient.get<Grade>(`/courses/${courseId}/grades/${gradeId}`),
   
-  update: (courseId: number, gradeId: number, data: Partial<Grade>) =>
+  update: (courseId: number, gradeId: number, data: Partial<Grade> & { overrides?: GradeOverrideItem[]; clear_override_user_ids?: number[] }) =>
     apiClient.put<Grade>(`/courses/${courseId}/grades/${gradeId}`, data),
   
   getSummary: (courseId: number, params?: { group_id?: number }) =>
     apiClient.get<GradeOverview>(`/courses/${courseId}/grades/summary`, params),
+
+  downloadSummaryCSV: (courseId: number, params?: { group_id?: number }) =>
+    apiClient.download(`/courses/${courseId}/grades/summary.csv`, `grades-course-${courseId}.csv`, params),
 };
 
 const Submissions = {
@@ -342,6 +365,34 @@ const Exams = {
 
   disenroll: (courseId: number, examId: number) =>
     apiClient.delete<void>(`/courses/${courseId}/exams/${examId}/enrollments`),
+
+  updateEnrollment: (courseId: number, examId: number, data: { user_id: number; status: number; mark: string; exam_points?: number; bonus_points?: number; raw_mark?: string }) =>
+    apiClient.put<void>(`/courses/${courseId}/exams/${examId}/enrollments`, data),
+};
+
+const Teams = {
+  get: (courseId: number) =>
+    apiClient.get<Team>(`/courses/${courseId}/team`),
+
+  generateToken: (courseId: number) =>
+    apiClient.post<{ token: string }>(`/courses/${courseId}/team/token`),
+
+  join: (courseId: number, data: JoinTeamRequest) =>
+    apiClient.post<Team>(`/courses/${courseId}/team/join`, data),
+
+  getRoster: async (courseId: number, params?: { q?: string }): Promise<TeamRosterMember[]> => {
+    const res = await apiClient.get<any>(`/courses/${courseId}/teams`, params);
+    return Array.isArray(res) ? res : res?.roster || [];
+  },
+
+  moveMember: (courseId: number, data: MoveTeamMemberRequest) =>
+    apiClient.post<void>(`/courses/${courseId}/teams/move`, data),
+
+  splitMember: (courseId: number, data: SplitTeamMemberRequest) =>
+    apiClient.post<void>(`/courses/${courseId}/teams/split`, data),
+
+  createCustomTeam: (courseId: number, data: CreateCustomTeamRequest) =>
+    apiClient.post<void>(`/courses/${courseId}/teams`, data),
 };
 
 const Terms = {
@@ -360,6 +411,7 @@ const agent = {
   Grades,
   Submissions,
   Exams,
+  Teams,
   Terms,
   setToken: () => apiClient.setToken(),
   clearToken: () => apiClient.clearToken(),

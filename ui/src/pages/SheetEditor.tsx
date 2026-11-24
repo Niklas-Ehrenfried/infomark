@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, DatePicker, Upload, message, Breadcrumb } from 'antd';
+import { Form, Input, Button, Card, DatePicker, Upload, Switch, message, Breadcrumb } from 'antd';
 import { InboxOutlined, HomeOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import agent from '@/api/agent';
@@ -29,6 +29,7 @@ const SheetEditor: React.FC = () => {
         ...sheet,
         publish_at: dayjs(sheet.publish_at),
         due_at: dayjs(sheet.due_at),
+        allow_teams: sheet.allow_teams ?? true,
       });
     } catch (error) {
       message.error(t('sheet.loadFailed'));
@@ -89,6 +90,16 @@ const SheetEditor: React.FC = () => {
 
         <Form.Item name="due_at" label={t('sheet.dueDate')} rules={[{ required: true }]}>
           <DatePicker showTime style={{ width: '100%' }} />
+        </Form.Item>
+
+        <Form.Item
+          name="allow_teams"
+          label={t('team.allowTeams')}
+          valuePropName="checked"
+          initialValue={true}
+          extra={t('team.allowTeamsHelp')}
+        >
+          <Switch />
         </Form.Item>
 
         <Form.Item label={t('sheet.sheetFile')}>

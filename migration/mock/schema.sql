@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS group_bids;
 -- DROP TABLE IF EXISTS task_feedbacks;
 DROP TABLE IF EXISTS task_ratings;
 
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
 DROP TABLE IF EXISTS materials;
 DROP TABLE IF EXISTS groups;
 DROP TABLE IF EXISTS grades;

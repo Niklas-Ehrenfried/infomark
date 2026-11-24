@@ -29,9 +29,10 @@ import (
 
 // SheetRequest is the request payload for Sheet management.
 type SheetRequest struct {
-	Name      string    `json:"name" example:"Blatt 42"`
-	PublishAt time.Time `json:"publish_at" example:"auto"`
-	DueAt     time.Time `json:"due_at" example:"auto"`
+	Name       string    `json:"name" example:"Blatt 42"`
+	PublishAt  time.Time `json:"publish_at" example:"auto"`
+	DueAt      time.Time `json:"due_at" example:"auto"`
+	AllowTeams *bool     `json:"allow_teams"`
 }
 
 // Bind preprocesses a SheetRequest.

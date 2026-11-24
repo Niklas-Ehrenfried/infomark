@@ -99,12 +99,36 @@ func (rs *CourseResource) CreateHandler(w http.ResponseWriter, r *http.Request) 
 	course.BeginsAt = data.BeginsAt
 	course.EndsAt = data.EndsAt
 	course.RequiredPercentage = data.RequiredPercentage
+	course.TeamsEnabled = data.TeamsEnabled
+	course.TeamFormationOpen = data.TeamFormationOpen
+	if data.MaxTeamSize > 0 {
+		course.MaxTeamSize = data.MaxTeamSize
+	} else {
+		course.MaxTeamSize = 2
+	}
+	course.EnforceSameExerciseGroup = data.EnforceSameExerciseGroup
+	course.BonusMode = data.BonusMode
+	if data.GroupSolver != "" {
+		course.GroupSolver = data.GroupSolver
+	} else {
+		course.GroupSolver = "optimal"
+	}
+	if data.MinGroupPreferences > 0 {
+		course.MinGroupPreferences = data.MinGroupPreferences
+	} else {
+		course.MinGroupPreferences = 3
+	}
 
 	// create course entry in database
 	newCourse, err := rs.Stores.Course.Create(course)
 	if err != nil {
 		render.Render(w, r, ErrRender(err))
 		return
+	}
+
+	if newCourse.TeamsEnabled {
+		_ = rs.Stores.Team.EnsureSoloTeams(newCourse.ID)
+		_ = rs.Stores.Team.EnsureSingleGroupEnrollment(newCourse.ID)
 	}
 
 	render.Status(r, http.StatusCreated)
@@ -166,16 +190,41 @@ func (rs *CourseResource) EditHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	wasFormationOpen := course.TeamFormationOpen
 	course.Name = data.Name
 	course.Description = data.Description
 	course.BeginsAt = data.BeginsAt
 	course.EndsAt = data.EndsAt
 	course.RequiredPercentage = data.RequiredPercentage
+	course.TeamsEnabled = data.TeamsEnabled
+	course.TeamFormationOpen = data.TeamFormationOpen
+	if data.MaxTeamSize > 0 {
+		course.MaxTeamSize = data.MaxTeamSize
+	} else {
+		course.MaxTeamSize = 2
+	}
+	course.EnforceSameExerciseGroup = data.EnforceSameExerciseGroup
+	course.BonusMode = data.BonusMode
+	if data.GroupSolver != "" {
+		course.GroupSolver = data.GroupSolver
+	}
+	if data.MinGroupPreferences > 0 {
+		course.MinGroupPreferences = data.MinGroupPreferences
+	}
 
 	// update database entry
 	if err := rs.Stores.Course.Update(course); err != nil {
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
+	}
+
+	if course.TeamsEnabled {
+		_ = rs.Stores.Team.EnsureSoloTeams(course.ID)
+		_ = rs.Stores.Team.EnsureSingleGroupEnrollment(course.ID)
+	}
+
+	if wasFormationOpen && !course.TeamFormationOpen {
+		_ = rs.Stores.Team.ClearTokensForCourse(course.ID)
 	}
 
 	// TODO(patwie): change StatusNoContent
@@ -353,6 +402,8 @@ func (rs *CourseResource) DeleteUserEnrollmentHandler(w http.ResponseWriter, r *
 		return
 	}
 
+	_ = rs.Stores.Team.DeleteMember(user.ID, course.ID)
+
 	render.Status(r, http.StatusNoContent)
 }
 
@@ -416,6 +467,11 @@ func (rs *CourseResource) EnrollHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if role == 0 && course.TeamsEnabled {
+		_, _ = rs.Stores.Team.CreateSoloTeam(accessClaims.LoginID, course.ID)
+		_ = rs.Stores.Team.EnsureSingleGroupEnrollment(course.ID)
+	}
+
 	userEnrollment, err := rs.Stores.Course.GetUserEnrollment(course.ID, accessClaims.LoginID)
 	if err != nil {
 		render.Render(w, r, ErrBadRequestWithDetails(err))
@@ -457,6 +513,8 @@ func (rs *CourseResource) DisenrollHandler(w http.ResponseWriter, r *http.Reques
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
 	}
+
+	_ = rs.Stores.Team.DeleteMember(accessClaims.LoginID, course.ID)
 
 	render.Status(r, http.StatusNoContent)
 }

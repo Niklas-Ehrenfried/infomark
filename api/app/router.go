@@ -331,6 +331,9 @@ func New(db *sqlx.DB, promhttp http.Handler, log bool) (*chi.Mux, error) {
 								r.Get("/own", appAPI.Group.GetMineHandler)
 								r.Get("/", appAPI.Group.IndexHandler)
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/", appAPI.Group.CreateHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/auto-assign", appAPI.Group.AutoAssignHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Post("/reset-assignments", appAPI.Group.ResetAssignmentsHandler)
+								r.Post("/bids", appAPI.Group.SaveBidsHandler)
 
 								r.Route("/{group_id}", func(r chi.Router) {
 									r.Use(appAPI.Group.Context)
@@ -375,10 +378,26 @@ func New(db *sqlx.DB, promhttp http.Handler, log bool) (*chi.Mux, error) {
 								})
 							})
 
+							r.Route("/team", func(r chi.Router) {
+								r.Get("/", appAPI.Team.GetTeamHandler)
+								r.Post("/token", appAPI.Team.GenerateTokenHandler)
+								r.Post("/join", appAPI.Team.JoinTeamHandler)
+							})
+
+							r.Route("/teams", func(r chi.Router) {
+								r.Use(authorize.RequiresAtLeastCourseRole(authorize.TUTOR))
+								r.Get("/", appAPI.Team.ListRosterHandler)
+								r.Post("/move", appAPI.Team.MoveMemberHandler)
+								r.Post("/split", appAPI.Team.SplitMemberHandler)
+								r.Post("/", appAPI.Team.CreateCustomTeamHandler)
+							})
+
 							r.Route("/grades", func(r chi.Router) {
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/", appAPI.Grade.IndexHandler)
 								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/summary", appAPI.Grade.IndexSummaryHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.ADMIN)).Get("/summary.csv", appAPI.Grade.SummaryCSVHandler)
 								r.Get("/missing", appAPI.Grade.IndexMissingHandler)
+								r.With(authorize.RequiresAtLeastCourseRole(authorize.TUTOR)).Get("/graded", appAPI.Grade.IndexGradedHandler)
 
 								r.Route("/{grade_id}", func(r chi.Router) {
 									r.Use(appAPI.Grade.Context)

@@ -20,8 +20,11 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -53,16 +56,23 @@ func NewExamResource(stores *Stores) *ExamResource {
 // RESPONSE: 403,Unauthorized
 // SUMMARY:  list all exams
 func (rs *ExamResource) IndexHandler(w http.ResponseWriter, r *http.Request) {
-	// fetch collection of exams from database
-	exams, err := rs.Stores.Exam.GetAll()
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+
+	// fetch collection of exams belonging to this course
+	exams, err := rs.Stores.Exam.ExamsOfCourse(course.ID)
 	if err != nil {
-		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+		_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
 		return
 	}
 
+	counts, err := rs.Stores.Exam.GetEnrolledCountsForCourse(course.ID)
+	if err != nil {
+		counts = nil
+	}
+
 	// render JSON response
-	if err = render.RenderList(w, r, rs.newExamListResponse(exams)); err != nil {
-		render.Render(w, r, ErrRender(err))
+	if err = render.RenderList(w, r, rs.newExamListResponse(exams, counts)); err != nil {
+		_ = render.Render(w, r, ErrRender(err))
 		return
 	}
 }
@@ -95,6 +105,17 @@ func (rs *ExamResource) CreateHandler(w http.ResponseWriter, r *http.Request) {
 	exam.Description = data.Description
 	exam.ExamTime = data.ExamTime
 	exam.CourseID = course.ID
+	if data.MaxPoints > 0 {
+		exam.MaxPoints = data.MaxPoints
+	} else {
+		exam.MaxPoints = 100
+	}
+	exam.BonusEnabled = data.BonusEnabled
+	if data.BonusPercentage > 0 {
+		exam.BonusPercentage = data.BonusPercentage
+	} else {
+		exam.BonusPercentage = 10
+	}
 
 	// create course entry in database
 	newExam, err := rs.Stores.Exam.Create(exam)
@@ -106,8 +127,8 @@ func (rs *ExamResource) CreateHandler(w http.ResponseWriter, r *http.Request) {
 	render.Status(r, http.StatusCreated)
 
 	// return course information of created entry
-	if err := render.Render(w, r, rs.newExamResponse(newExam)); err != nil {
-		render.Render(w, r, ErrRender(err))
+	if err := render.Render(w, r, rs.newExamResponse(newExam, nil)); err != nil {
+		_ = render.Render(w, r, ErrRender(err))
 		return
 	}
 
@@ -129,8 +150,8 @@ func (rs *ExamResource) GetHandler(w http.ResponseWriter, r *http.Request) {
 	exam := r.Context().Value(symbol.CtxKeyExam).(*model.Exam)
 
 	// render JSON response
-	if err := render.Render(w, r, rs.newExamResponse(exam)); err != nil {
-		render.Render(w, r, ErrRender(err))
+	if err := render.Render(w, r, rs.newExamResponse(exam, nil)); err != nil {
+		_ = render.Render(w, r, ErrRender(err))
 		return
 	}
 
@@ -163,6 +184,13 @@ func (rs *ExamResource) EditHandler(w http.ResponseWriter, r *http.Request) {
 	exam.Name = data.Name
 	exam.Description = data.Description
 	exam.ExamTime = data.ExamTime
+	if data.MaxPoints > 0 {
+		exam.MaxPoints = data.MaxPoints
+	}
+	exam.BonusEnabled = data.BonusEnabled
+	if data.BonusPercentage > 0 {
+		exam.BonusPercentage = data.BonusPercentage
+	}
 
 	// update database entry
 	if err := rs.Stores.Exam.Update(exam); err != nil {
@@ -218,6 +246,31 @@ func (rs *ExamResource) EnrollExamHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	course := r.Context().Value(symbol.CtxKeyCourse).(*model.Course)
+	if course.RequiredPercentage > 0 {
+		courseMax, err := rs.Stores.Course.TotalMaxPointsOfCourse(course.ID)
+		if err != nil {
+			_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+			return
+		}
+		if courseMax > 0 {
+			sheetPoints, err := rs.Stores.Course.PointsForUser(accessClaims.LoginID, course.ID)
+			if err != nil {
+				_ = render.Render(w, r, ErrInternalServerErrorWithDetails(err))
+				return
+			}
+			totalAcquired := 0
+			for _, sp := range sheetPoints {
+				totalAcquired += sp.AquiredPoints
+			}
+			pct := int(math.Round(float64(totalAcquired) * 100.0 / float64(courseMax)))
+			if pct < course.RequiredPercentage {
+				_ = render.Render(w, r, ErrBadRequestWithDetails(fmt.Errorf("course points (%d%%) below required admission threshold (%d%%)", pct, course.RequiredPercentage)))
+				return
+			}
+		}
+	}
+
 	// update database entry
 	if err := rs.Stores.Exam.Enroll(exam.ID, accessClaims.LoginID); err != nil {
 		render.Render(w, r, ErrInternalServerErrorWithDetails(err))
@@ -270,6 +323,11 @@ func (rs *ExamResource) DisenrollExamHandler(w http.ResponseWriter, r *http.Requ
 
 	if requestedExamUser.Status != 0 {
 		render.Render(w, r, ErrBadRequestWithDetails(errors.New("Status has been already changed, cannot disenroll")))
+		return
+	}
+
+	if time.Now().After(exam.ExamTime) {
+		_ = render.Render(w, r, ErrBadRequestWithDetails(errors.New("exam date has passed, cannot disenroll")))
 		return
 	}
 
@@ -341,6 +399,9 @@ func (rs *ExamResource) UpdateEnrollExamHandler(w http.ResponseWriter, r *http.R
 	}
 	requestedExamUser.Status = data.Status
 	requestedExamUser.Mark = data.Mark
+	requestedExamUser.ExamPoints = data.ExamPoints
+	requestedExamUser.BonusPoints = data.BonusPoints
+	requestedExamUser.RawMark = data.RawMark
 
 	// update database entry
 	if err := rs.Stores.Exam.UpdateUserExam(requestedExamUser); err != nil {

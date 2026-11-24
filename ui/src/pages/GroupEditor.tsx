@@ -46,12 +46,16 @@ const GroupEditor: React.FC = () => {
     setLoading(true);
     try {
       const cId = parseInt(courseId!);
+      const payload: any = {
+        description: values.description,
+        tutor: { id: values.tutor_id },
+      };
 
       if (groupId) {
-        await agent.Groups.update(cId, parseInt(groupId), values);
+        await agent.Groups.update(cId, parseInt(groupId), payload);
         message.success(t('group.updated'));
       } else {
-        await agent.Groups.create(cId, values);
+        await agent.Groups.create(cId, payload);
         message.success(t('group.created'));
       }
 

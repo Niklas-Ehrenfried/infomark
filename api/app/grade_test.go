@@ -339,7 +339,7 @@ func TestGrade(t *testing.T) {
 			err = json.NewDecoder(w.Body).Decode(&gradesActual)
 			g.Assert(err).Equal(nil)
 
-			gradesExpected, err := stores.Grade.GetAllMissingGrades(1, noAdminJWT.Claims.LoginID, 0)
+			gradesExpected, err := stores.Grade.GetAllMissingGrades(1, 0, 0)
 			g.Assert(err).Equal(nil)
 			g.Assert(len(gradesActual)).Equal(len(gradesExpected))
 
@@ -353,7 +353,7 @@ func TestGrade(t *testing.T) {
 			g.Assert(err).Equal(nil)
 			g.Assert(len(gradesActual)).Equal(len(gradesExpected))
 
-			_, err = tape.DB.Exec("UPDATE grades SET feedback='' WHERE tutor_id = 3 ")
+			_, err = tape.DB.Exec("UPDATE grades SET feedback='', acquired_points=0 WHERE tutor_id = 3 ")
 			g.Assert(err).Equal(nil)
 
 			// tutors (mock creates feed back for all submissions)

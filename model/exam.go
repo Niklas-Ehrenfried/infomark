@@ -28,10 +28,13 @@ type Exam struct {
 	CreatedAt time.Time `db:"created_at,omitempty"`
 	UpdatedAt time.Time `db:"updated_at,omitempty"`
 
-	Name        string    `db:"name"`
-	Description string    `db:"description"`
-	ExamTime    time.Time `db:"exam_time"`
-	CourseID    int64     `db:"course_id"`
+	Name            string    `db:"name"`
+	Description     string    `db:"description"`
+	ExamTime        time.Time `db:"exam_time"`
+	CourseID        int64     `db:"course_id"`
+	MaxPoints       int       `db:"max_points"`
+	BonusEnabled    bool      `db:"bonus_enabled"`
+	BonusPercentage int       `db:"bonus_percentage"`
 }
 
 // Enrollment represents a an enrollment-type of a given user
@@ -41,6 +44,9 @@ type UserExam struct {
 	ExamID   int64 `db:"exam_id"`
 	CourseID int64 `db:"course_id,readonly"`
 
-	Status int    `db:"status"`
-	Mark   string `db:"mark"`
+	Status      int    `db:"status"`
+	Mark        string `db:"mark"`
+	ExamPoints  int    `db:"exam_points"`
+	BonusPoints int    `db:"bonus_points"`
+	RawMark     string `db:"raw_mark"`
 }

@@ -21,6 +21,8 @@ package model
 
 import (
 	"time"
+
+	null "github.com/guregu/null/v6"
 )
 
 // -- 0: pending, 1: running, 2: finished
@@ -43,6 +45,7 @@ type Grade struct {
 	Feedback              string `db:"feedback"`
 	TutorID               int64  `db:"tutor_id"`
 	SubmissionID          int64  `db:"submission_id"`
+	IsIndividualOverride  bool   `db:"is_individual_override"`
 	UserID                int64  `db:"user_id,readonly"`
 	UserFirstName         string `db:"user_first_name,readonly"`
 	UserLastName          string `db:"user_last_name,readonly"`
@@ -53,9 +56,11 @@ type Grade struct {
 // yet. We expects TAs to give at least a feedback.
 type MissingGrade struct {
 	Grade
-	CourseID int64 `db:"course_id"`
-	SheetID  int64 `db:"sheet_id"`
-	TaskID   int64 `db:"task_id"`
+	CourseID   int64    `db:"course_id"`
+	SheetID    int64    `db:"sheet_id"`
+	TaskID     int64    `db:"task_id"`
+	TeamID     null.Int `db:"team_id"`
+	TeamNumber null.Int `db:"team_number"`
 }
 
 // OverviewGrade is a database view containing informations for grades from

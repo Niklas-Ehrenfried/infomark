@@ -57,6 +57,13 @@ export interface Course {
   begins_at: string;
   ends_at: string;
   required_percentage: number;
+  teams_enabled?: boolean;
+  team_formation_open?: boolean;
+  max_team_size?: number;
+  enforce_same_exercise_group?: boolean;
+  bonus_mode?: number;
+  group_solver?: 'optimal' | 'regret' | 'greedy';
+  min_group_preferences?: number;
 }
 
 export interface CourseRole {
@@ -69,6 +76,7 @@ export interface Sheet {
   name: string;
   publish_at: string;
   due_at: string;
+  allow_teams?: boolean;
 }
 
 // Task Types
@@ -120,6 +128,79 @@ export interface GroupEnrollmentChange {
   group_id: number;
 }
 
+export interface AutoAssignResult {
+  assigned_count: number;
+  solver_used: string;
+  avg_satisfaction: number;
+  top_choice_pct: number;
+}
+
+// Team Types
+export interface TeamMember {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  avatar_url?: string;
+  joined_at: string;
+}
+
+export interface Team {
+  id: number;
+  team_number?: number;
+  course_id: number;
+  invite_token?: string | null;
+  members: TeamMember[];
+}
+
+export interface TeamRosterMember {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  student_number: string;
+  group_id?: number | null;
+  group_name?: string | null;
+  group_description?: string | null;
+  team_id?: number | null;
+  team_number?: number;
+  team_size: number;
+  joined_at?: string | null;
+}
+
+export interface JoinTeamRequest {
+  token: string;
+  consent: boolean;
+}
+
+export interface MoveTeamMemberRequest {
+  user_id: number;
+  target_team_id: number;
+}
+
+export interface SplitTeamMemberRequest {
+  user_id: number;
+}
+
+export interface CreateCustomTeamRequest {
+  user_ids: number[];
+}
+
+export interface TeammateGradeView {
+  grade_id: number;
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  acquired_points: number;
+  feedback: string;
+  is_individual_override: boolean;
+}
+
+export interface GradeOverrideItem {
+  user_id: number;
+  acquired_points: number;
+  feedback: string;
+}
+
 // Grade Types
 export interface Grade {
   id: number;
@@ -135,6 +216,14 @@ export interface Grade {
   submission_id: number;
   file_url: string;
   updated_at: string;
+  is_individual_override?: boolean;
+  team_id?: number | null;
+  team_number?: number | null;
+  submitted_by_user_id?: number | null;
+  submitted_by_name?: string;
+  is_final?: boolean;
+  submission_updated_at?: string;
+  teammate_grades?: TeammateGradeView[];
   // Present on GradeResponse (grade_responses.go): the graded student.
   user?: {
     id: number;
@@ -153,6 +242,8 @@ export interface MissingGrade {
   course_id: number;
   sheet_id: number;
   task_id: number;
+  team_id?: number | null;
+  team_number?: number | null;
 }
 
 // Submission Types
@@ -196,6 +287,10 @@ export interface Exam {
   description: string;
   exam_time: string;
   course_id: number;
+  max_points?: number;
+  bonus_enabled?: boolean;
+  bonus_percentage?: number;
+  enrolled_count?: number;
 }
 
 // `GET /account/exams/enrollments` and the exam enroll endpoints return this
@@ -208,6 +303,13 @@ export interface ExamEnrollment {
   user_id: number;
   course_id: number;
   exam_id: number;
+  exam_points?: number;
+  bonus_points?: number;
+  raw_mark?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  student_number?: string;
 }
 
 // Mail Types
@@ -258,6 +360,7 @@ export interface GradeOverviewAchievement {
 export interface GradeOverview {
   sheets: GradeOverviewSheet[];
   achievements: GradeOverviewAchievement[];
+  total_max_points?: number;
 }
 
 // Account Types
@@ -302,6 +405,7 @@ export interface UserUpdate {
 export interface ApiError {
   message: string;
   status?: number;
+  code?: number;
 }
 
 // Utility Types

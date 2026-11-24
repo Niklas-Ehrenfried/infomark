@@ -73,8 +73,8 @@ func (s *ExamStore) Enroll(examID int64, userID int64) error {
 	}
 	_, err = s.db.Exec(`
 INSERT INTO
-  user_exam (id, user_id, exam_id, status, mark)
-VALUES (DEFAULT, $1, $2, 0, '');
+  user_exam (id, user_id, exam_id, status, mark, exam_points, bonus_points, raw_mark)
+VALUES (DEFAULT, $1, $2, 0, '', 0, 0, '');
 `, userID, examID)
 	return err
 }
@@ -90,6 +90,31 @@ AND
 	return err
 }
 
+func (s *ExamStore) GetEnrolledCount(examID int64) (int, error) {
+	var count int
+	err := s.db.Get(&count, "SELECT COUNT(*) FROM user_exam WHERE exam_id = $1;", examID)
+	return count, err
+}
+
+func (s *ExamStore) GetEnrolledCountsForCourse(courseID int64) (map[int64]int, error) {
+	type row struct {
+		ExamID int64 `db:"exam_id"`
+		Count  int   `db:"cnt"`
+	}
+	var rows []row
+	err := s.db.Select(&rows, `
+SELECT e.id AS exam_id, COUNT(ue.id) AS cnt
+FROM exams e
+LEFT JOIN user_exam ue ON ue.exam_id = e.id
+WHERE e.course_id = $1
+GROUP BY e.id;`, courseID)
+	counts := make(map[int64]int, len(rows))
+	for _, r := range rows {
+		counts[r.ExamID] = r.Count
+	}
+	return counts, err
+}
+
 func (s *ExamStore) GetEnrollmentsOfUser(userID int64) ([]model.UserExam, error) {
 	p := []model.UserExam{}
 
@@ -101,7 +126,10 @@ SELECT
   ue.user_id,
   ue.exam_id,
   e.course_id,
-  ue.id
+  ue.id,
+  ue.exam_points,
+  ue.bonus_points,
+  ue.raw_mark
 FROM
   user_exam ue
 INNER JOIN exams e ON ue.exam_id = e.id
@@ -122,7 +150,10 @@ SELECT
   ue.user_id,
   ue.exam_id,
   e.course_id,
-  ue.id
+  ue.id,
+  ue.exam_points,
+  ue.bonus_points,
+  ue.raw_mark
 FROM
   user_exam ue
 INNER JOIN exams e ON ue.exam_id = e.id
@@ -151,7 +182,10 @@ SELECT
   ue.user_id,
   ue.exam_id,
   e.course_id,
-  ue.id
+  ue.id,
+  ue.exam_points,
+  ue.bonus_points,
+  ue.raw_mark
 FROM
   user_exam ue
 INNER JOIN exams e ON ue.exam_id = e.id
